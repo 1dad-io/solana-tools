@@ -1,0 +1,6 @@
+# Welcome to the solana-tools sudoers file
+ubuntu ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+ubuntu ALL=(ALL) NOPASSWD: /usr/bin/systemctl status chrony
+ubuntu ALL=(ALL) NOPASSWD: /usr/bin/systemctl status relayer
+ubuntu ALL=(ALL) NOPASSWD: /usr/bin/systemctl status solana*,/usr/bin/systemctl start solana*,/usr/bin/systemctl stop solana*
+ubuntu ALL=(ALL) NOPASSWD: /usr/sbin/fstrim,/usr/sbin/reboot,/usr/sbin/logrotate,/usr/sbin/dmidecode

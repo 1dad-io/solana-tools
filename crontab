@@ -1,0 +1,12 @@
+# Welcome to the solana-tools crontab file
+MAILTO=""
+SHELL=/bin/bash
+
+@reboot $HOME/solana-tools/solana.sh on-boot -c &>/dev/null
+0 * * * * sudo /usr/sbin/logrotate /etc/logrotate.d/solana &>/dev/null
+0 6,18 * * * touch $HOME/solana-tools/solana-tools.wd-ping &>/dev/null
+0 * * * * sudo $HOME/solana-tools/solana.sh trim -c -d 100 &>/dev/null
+* * * * * sudo $HOME/solana-tools/solana.sh watchdog -c &>/dev/null
+* * * * * sleep $[(RANDOM\%10)+10]; $HOME/solana-tools/solana.sh balance -c &>/dev/null
+0 */6 * * * sleep $[(RANDOM\%10)+10]; $HOME/solana-tools/solana.sh airdrop -c -p &>/dev/null
+*/5 * * * * $HOME/solana-tools/solana.sh stakes -c &>/dev/null

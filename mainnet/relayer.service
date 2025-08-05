@@ -1,0 +1,29 @@
+[Unit]
+Description=Relayer
+Requires=network-online.target chrony.service
+After=network-online.target chrony.service
+ConditionPathExists=/home/ubuntu/solana-tools/keys/relayer/relayer-keypair.json
+ConditionPathExists=/home/ubuntu/solana-tools/keys/relayer/private.pem
+ConditionPathExists=/home/ubuntu/solana-tools/keys/relayer/public.pem
+
+[Service]
+User=ubuntu
+Restart=on-failure
+Environment=RUST_LOG=info
+Environment=SOLANA_METRICS_CONFIG="host=http://metrics.jito.wtf:8086,db=relayer,u=relayer-operators,p=jito-relayer-write"
+Environment=TAG=v0.4.2
+# Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf"
+Environment="BLOCK_ENGINE_URL=https://ny.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://slc.mainnet.block-engine.jito.wtf"
+Environment=GRPC_BIND_IP=127.0.0.1
+
+ExecStart=/home/ubuntu/solana-tools/solana.sh relayer \
+	--block-engine-url ${BLOCK_ENGINE_URL} \
+	--keypair-path /home/ubuntu/solana-tools/keys/relayer/relayer-keypair.json \
+	--signing-key-pem-path /home/ubuntu/solana-tools/keys/relayer/private.pem \
+	--verifying-key-pem-path /home/ubuntu/solana-tools/keys/relayer/public.pem
+
+[Install]
+WantedBy=multi-user.target

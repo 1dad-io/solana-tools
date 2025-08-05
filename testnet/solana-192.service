@@ -1,0 +1,81 @@
+# The known-validators on testnet are:
+# 5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on - Solana Labs
+# dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs  - MonkeDAO
+# Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN - Certus One
+# eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ  - SerGo
+# 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv - Algo|Stake
+# FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS - 1Dad
+
+[Unit]
+Description=Validator
+After=network.target syslog.target
+StartLimitIntervalSec=0
+ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair.json
+ConditionPathExists=/home/ubuntu/solana-tools/keys/vote-account-testnet.json
+ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair-testnet.json
+
+[Service]
+Restart=on-failure
+RestartSec=1
+LimitNOFILE=2000000
+LogRateLimitIntervalSec=0
+Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
+Environment=TAG=v2.3.6-jito
+# [Dallas]
+Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
+Environment="RELAYER_URL=http://dallas.testnet.relayer.jito.wtf:8100"
+Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
+# [New York]
+# Environment="BLOCK_ENGINE_URL=https://ny.testnet.block-engine.jito.wtf"
+# Environment="RELAYER_URL=http://ny.testnet.relayer.jito.wtf:8100"
+# Environment="SHRED_RECEIVER_ADDR=64.130.35.224:1002"
+WorkingDirectory=/home/ubuntu/solana-tools
+ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
+	--ledger /mnt/data/ledger \
+	--accounts /mnt/acct/accounts \
+	--accounts-hash-cache-path /mnt/acct/accounts_hash_cache \
+	--accounts-index-path /mnt/acct/accounts_index \
+	--snapshots /mnt/snap/snapshots \
+	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
+	--log /mnt/data/log/solana.log \
+	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
+	--vote-account /home/ubuntu/solana-tools/keys/vote-account-testnet.json \
+	--authorized-voter /home/ubuntu/solana-tools/keys/validator-keypair-testnet.json \
+	--expected-genesis-hash 4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY \
+	--entrypoint entrypoint.testnet.solana.com:8001 \
+	--entrypoint entrypoint2.testnet.solana.com:8001 \
+	--entrypoint entrypoint3.testnet.solana.com:8001 \
+	--known-validator 5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on \
+	--known-validator dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs \
+	--known-validator Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN \
+	--known-validator eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ \
+	--known-validator 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv \
+	--known-validator FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS \
+	--dynamic-port-range 8000-8020 \
+	--rpc-port 8899 \
+	--full-rpc-api \
+	--only-known-rpc \
+	--private-rpc \
+	--snapshot-interval-slots 100 \
+	--full-snapshot-interval-slots 50000 \
+	--maximum-full-snapshots-to-retain 2 \
+	--maximum-incremental-snapshots-to-retain 4 \
+	--maximum-local-snapshot-age 2500 \
+	--minimal-snapshot-download-speed 52428800 \
+	--wal-recovery-mode skip_any_corrupted_record \
+	--limit-ledger-size 50000000 \
+	--no-check-vote-account \
+	--no-poh-speed-test \
+	--no-port-check \
+	--tip-payment-program-pubkey GJHtFqM9agxPmkeKjHny6qiRKrXZALvvFGiKf11QE7hy \
+	--tip-distribution-program-pubkey F2Zu7QZiTYUhPd7u9ukRVwxh7B71oA3NMJcHuCHc29P2 \
+	--merkle-root-upload-authority 7heQNXEtxSv3wV8sNbuQsDN5xNGbbpLvHGiyXuJxEf7n \
+	--commission-bps 800 \
+	--block-engine-url ${BLOCK_ENGINE_URL} \
+	--relayer-url ${RELAYER_URL} \
+	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+
+[Install]
+WantedBy=multi-user.target

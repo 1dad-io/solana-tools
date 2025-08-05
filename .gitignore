@@ -1,0 +1,21 @@
+/agave/
+/firedancer/
+/jito-relayer/
+/jito-solana/
+/keys/*
+**/data/*
+**patch*
+
+# testing artifacts
+*-test*.service
+*.log
+*.pid
+*shellcheck*
+*~
+mostly_confirmed_threshold*
+solana-tools.*
+
+# temporary
+mksnapshot.sh
+
+.DS_Store

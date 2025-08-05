@@ -1,0 +1,88 @@
+# The known-validators are operated by Solana Labs
+
+[Unit]
+Description=Validator
+After=network.target syslog.target
+StartLimitIntervalSec=0
+ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair.json
+ConditionPathExists=/home/ubuntu/solana-tools/keys/vote-account-mainnet.json
+ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair-mainnet.json
+
+[Service]
+Restart=on-failure
+RestartSec=1
+LimitNOFILE=2000000
+LogRateLimitIntervalSec=0
+Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
+Environment=TAG=v2.3.6-jito
+# [Amsterdam]
+# Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
+# Environment="RELAYER_URL=http://amsterdam.mainnet.relayer.jito.wtf:8100"
+# Environment="SHRED_RECEIVER_ADDR=74.118.140.240:1002"
+# [Frankfurt]
+# Environment="BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf"
+# Environment="RELAYER_URL=http://frankfurt.mainnet.relayer.jito.wtf:8100"
+# Environment="SHRED_RECEIVER_ADDR=64.130.50.14:1002"
+# [New York]
+Environment="BLOCK_ENGINE_URL=https://ny.mainnet.block-engine.jito.wtf"
+Environment="RELAYER_URL=http://ny.mainnet.relayer.jito.wtf:8100"
+Environment="SHRED_RECEIVER_ADDR=141.98.216.96:1002"
+# [Tokyo]
+# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
+# Environment="RELAYER_URL=http://tokyo.mainnet.relayer.jito.wtf:8100"
+# Environment="SHRED_RECEIVER_ADDR=202.8.9.160:1002"
+# [Salt Lake City]
+# Environment="BLOCK_ENGINE_URL=https://slc.mainnet.block-engine.jito.wtf"
+# Environment="SHRED_RECEIVER_ADDR=64.130.53.8:1002"
+# Environment="RELAYER_URL=http://slc.mainnet.relayer.jito.wtf:8100"
+WorkingDirectory=/home/ubuntu/solana-tools
+ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
+	--tower /mnt/ramdisk/tower \
+	--ledger /mnt/ramdisk/ledger \
+	--accounts /mnt/ramdisk/accounts \
+	--accounts-hash-cache-path /mnt/ramdisk/accounts_hash_cache \
+	--accounts-index-path /mnt/ramdisk/accounts_index \
+	--snapshots /mnt/snap/snapshots \
+	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
+	--log /mnt/data/log/solana.log \
+	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
+	--vote-account /home/ubuntu/solana-tools/keys/vote-account-mainnet.json \
+	--authorized-voter /home/ubuntu/solana-tools/keys/validator-keypair-mainnet.json \
+	--expected-genesis-hash 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d \
+	--entrypoint entrypoint.mainnet-beta.solana.com:8001 \
+	--entrypoint entrypoint2.mainnet-beta.solana.com:8001 \
+	--entrypoint entrypoint3.mainnet-beta.solana.com:8001 \
+	--entrypoint entrypoint4.mainnet-beta.solana.com:8001 \
+	--entrypoint entrypoint5.mainnet-beta.solana.com:8001 \
+	--known-validator 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2 \
+	--known-validator GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ \
+	--known-validator DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ \
+	--known-validator CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S \
+	--dynamic-port-range 8000-8020 \
+	--rpc-port 8899 \
+	--full-rpc-api \
+	--only-known-rpc \
+	--private-rpc \
+	--snapshot-interval-slots 100 \
+	--full-snapshot-interval-slots 50000 \
+	--maximum-full-snapshots-to-retain 2 \
+	--maximum-incremental-snapshots-to-retain 4 \
+	--maximum-local-snapshot-age 2500 \
+	--minimal-snapshot-download-speed 52428800 \
+	--wal-recovery-mode skip_any_corrupted_record \
+	--limit-ledger-size 50000000 \
+	--no-check-vote-account \
+	--no-poh-speed-test \
+	--no-port-check \
+	--tip-payment-program-pubkey T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt \
+	--tip-distribution-program-pubkey 4R3gSG8BpU4t19KYj8CfnbtRpnT8gtk4dvTHxVRwc2r7 \
+	--merkle-root-upload-authority GZctHpWXmsZC1YHACTGGcHhYxjdRqQvTpYkb9LMvxDib \
+	--commission-bps 800 \
+	--block-engine-url ${BLOCK_ENGINE_URL} \
+	--relayer-url ${RELAYER_URL} \
+	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+
+[Install]
+WantedBy=multi-user.target
