@@ -14,7 +14,7 @@
 
 # package-info
 pkg_name=solana-tools
-pkg_tag=0.1.0
+pkg_version=0.1.0
 
 # script reporting
 is_num(){ [[ "$1" =~ ^[0-9]+$ ]]; }
@@ -627,11 +627,11 @@ usage(){
 
 title(){
 	local str=${1//PKG/${pkg_name}}
-	echo ${str//VERSION/${pkg_ver}}
+	echo ${str//VERSION/${pkg_version}}
 }; TITLE=$(title "${msg_setup}")
 
 backtitle(){
-	local arr=("${pkg_name} ${pkg_ver}")
+	local arr=("${pkg_name} ${pkg_version}")
 	[ -f "${solana}"  ] && arr+=("$(${solana} --version 2>/dev/null | cut -d '(' -f 1 | awk '{$1=$1};1')")
 	[ -f "${relayer}" ] && arr+=("$(${relayer} --version 2>/dev/null | sed 's/transaction-//g')")
 	# firedancer
