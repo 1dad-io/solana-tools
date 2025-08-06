@@ -14,6 +14,7 @@
 *~
 mostly_confirmed_threshold*
 solana-tools.*
+!/etc/**/solana-tools.*
 
 # temporary
 mksnapshot.sh
