@@ -2024,19 +2024,24 @@ update(){
 		git submodule update --init --recursive
 		
 		# apply patches
-		local f=${tool%/*}/patch.tar.gz
-		local p=${tool%/*}/patch/$TAG
-		if [ -f "${f}" ] && is_linux; then
-			tar --recursive-unlink -zxvf ${f} -C ${tool%/*}
+		local p=${tool%/*}/solana-patch/$TAG
+		git=${git_solana_patch}
+		if [ -n "${git}" ]; then
+			if [ ! -d "${p%/*}" ]; then
+				git -C ${tool%/*} clone ${git}
+			else
+				cd ${p%/*}
+				git clean -fd
+				git pull origin master
+				cd ${d}
+			fi
 		fi
 		if [ -d "${p}" ]; then
-			local conf=mostly_confirmed_threshold
 			find -L ${p} -name '*.rs' | while read f; do
 				local t=${d}${f//${p}/}
 				mkdir -p ${t%/*}
 				cp -av ${f} ${t}
 			done
-			[ -n "$(find -L ${tool%/*} -maxdepth 1 -name ${conf}*)" ] || cp -v ${no_clobber} ${p%/*}/${conf} ${tool%/*}
 		fi
 		if [ -f "${p}.sh" ]; then
 			warn ${msg_patch_found//FILE/${p##*/}.sh}
