@@ -21,5 +21,6 @@ solana-tools.*
 # temporary
 mksnapshot.sh
 mostly_confirmed_threshold*
+!/patch/*
 
 .DS_Store
