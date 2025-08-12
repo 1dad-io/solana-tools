@@ -1679,7 +1679,7 @@ check_snapshot(){
 	local max_age=${1:-${snapshots_age}}
 	local status=1 str=${msg_snap_missing}
 	local d; [ -z "${no_incremental_snapshots}" ] && d=${snapshots_inc} || d=${snapshots}
-	local f=`find ${d} -name '*.zst' -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
+	local f=`find ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
 	if [ -f "${f}" ]; then
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
@@ -2024,7 +2024,7 @@ update(){
 		git submodule update --init --recursive
 		
 		# apply patches
-		find_conf(){ find -L $1 -maxdepth 1 -name '*mostly*' ! -name '*~' -type f | sort | head -n 1; }
+		find_conf(){ find -L $1 -maxdepth 1 -type f -name '*mostly*' ! -name '*~' | sort | head -n 1; }
 		local p=${tool%/*}/solana-patch/$TAG
 		git=${git_solana_patch}
 		if [ -n "${git}" ]; then
@@ -2049,7 +2049,7 @@ update(){
 			fi
 		fi
 		if [ -d "${p}" ]; then
-			find -L ${p} -name '*.rs' -type f | while read f; do
+			find -L ${p} -type f -name '*.rs' | while read f; do
 				local t=${d}${f//${p}/}
 				mkdir -p ${t%/*}
 				cp -av ${f} ${t}
@@ -2316,7 +2316,7 @@ setup(){
 		# remove the pre-installed ssh keys if not root
 		local f=authorized_keys*
 		if [ "$USER" != 'root' ]; then
-			sudo find /root/.ssh -name ${f} ! -name '*~' -type f -print0 | xargs -0I {} sudo mv -n {}{,~} || :
+			sudo find /root/.ssh -type f -name ${f} ! -name '*~' -print0 | xargs -0I {} sudo mv -n {}{,~} || :
 		fi
 		
 		# set the correct permissions
