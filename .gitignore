@@ -3,7 +3,8 @@
 /firedancer/
 /jito-relayer/
 /jito-solana/
-/keys/*
+/keys/*.json
+/keys/relayer/
 /solana-patch/
 **/data/*
 
