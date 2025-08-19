@@ -172,23 +172,32 @@ read_conf(){
 	fi
 	source $CFGFILE &>/dev/null || error ${err_file_read//FILE/$CFGFILE}
 	
-	# set defaults
+	# moniker
 	moniker=${moniker:-mainnet-beta}
+	
+	# cpu-tuner [01]
+	# TODO: use n/y instead
 	cpu_gov=${cpu_gov:-disabled}
 	cpu_gov_default=${cpu_gov_default:-schedutil}
+	cpu_min_to_max=${cpu_min_to_max:-0}
+	cpu_ignore_max=${cpu_ignore_max:-1}
 	
 	# hot-swap
 	ssh_port=${ssh_port:-22}
 	ssh_user=${ssh_user:-root}
 	ssh_tool=${ssh_tool:-${tool}}
-	failures=${failures:-2}
+	failures=${failures:-1}
 	failures_offset=${failures_offset:-1}
+	
+	# airdrop & rebalance
+	airdrop_min=${airdrop_min:-1}
+	airdrop_max=${airdrop_max:-10}
 	
 	# logging
 	log_level=${log_level:-info}
 	log_limit=${log_limit:-10000}
-	log_period=${log_period:-0}
-	log_rotate=${log_rotate:-daily}
+	log_period=${log_period:-daily}
+	log_rotate=${log_rotate:-7}
 	
 	# RPC
 	rpc_url=${rpc_url:-${moniker}}
@@ -202,24 +211,38 @@ read_conf(){
 	cache_ttl=${cache_ttl:-60}
 	free_hugepgs=${free_hugepgs:-0}
 	lock_timeout=${lock_timeout:-30}
-	airdrop_min=${airdrop_min:-1}
-	airdrop_max=${airdrop_max:-10}
-	poll_interval=${poll_interval:-60}
-	tower_slot_delay=${tower_slot_delay:-4}
+	max_delinquent=${max_delinquent:-5}
+	min_idle_time=${min_idle_time:-10}
+	poll_interval=${poll_interval:-1}
+	relayerd=${relayerd:-relayer}
+	# systemd defaults to the RAM profile
+	tower_slot_delay=${tower_slot_delay:-0} # slots
 	tower_slot_speed=${tower_slot_speed:-2.5}
 	tower_ttl_slots=${tower_ttl_slots:-256}
-	trim_ttl=${trim_ttl:-3600} # 1h
-	trim_idle_time=${trim_idle_time:-5}
+	trim_ttl=${trim_ttl:-3600} # hours
+	trim_idle_time=${trim_idle_time:-5} # mins
 	
 	# sys-tuner
-	max_files=${max_files:-1000000}
+	max_files=${max_files:-2000000}
 	udp_buffer=${udp_buffer:-134217728}
-	swappiness=${swappiness:-10}
+	swappiness=${swappiness:-1}
 	cache_pressure=${cache_pressure:-50}
 	
 	# setup [01]
+	# TODO: use n/y instead
+	setup_sshd=${setup_sshd:-1}
+	setup_ufw=${setup_ufw:-1}
+	setup_ufw_quic=${setup_ufw_quic:-1}
+	setup_f2b=${setup_f2b:-1}
+	setup_sudoers=${setup_sudoers:-1}
 	setup_cli=${setup_cli:-1}
 	setup_cli_full=${setup_cli_full:-0}
+	setup_relayer=${setup_relayer:-1}
+	setup_cron=${setup_cron:-1}
+	setup_aliases=${setup_aliases:-1}
+	setup_finder=${setup_finder:-0}
+	setup_user=${setup_user:-ubuntu}
+	sudoers=${sudoers:-sudo}
 	
 	# dependencies
 	# `block`,`stakes`,`validators` are named after the RPC methods
