@@ -18,10 +18,11 @@ ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair-testnet.jso
 Restart=on-failure
 RestartSec=1
 LimitNOFILE=2000000
+LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
 Environment=TAG=v2.3.6
-Environment=TAG_FD=v0.606.20216
+Environment=TAG_FD=v0.707.20306
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
@@ -44,20 +45,19 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--known-validator eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ \
 	--known-validator 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv \
 	--known-validator FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS \
-	--dynamic-port-range 8000-8020 \
+	--dynamic-port-range 8000-8025 \
 	--rpc-port 8899 \
 	--full-rpc-api \
 	--only-known-rpc \
 	--private-rpc \
 	--snapshot-interval-slots 100 \
-	--full-snapshot-interval-slots 50000 \
+	--full-snapshot-interval-slots 100000 \
 	--maximum-full-snapshots-to-retain 2 \
 	--maximum-incremental-snapshots-to-retain 4 \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
 	--limit-ledger-size 50000000 \
-	--no-check-vote-account \
 	--no-poh-speed-test \
 	--no-port-check
 ExecReload=/bin/kill -s HUP $MAINPID

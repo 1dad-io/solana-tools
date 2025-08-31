@@ -374,6 +374,10 @@ while test $# -gt 0; do
 		no_snapshot_fetch=${no_snapshot_fetch:-1}
 		[ ${no_snapshot_fetch} == 1 ] || unset no_snapshot_fetch
 		shift;;
+	--no-snapshots)
+		no_snapshots=${no_snapshots:-1}
+		[ ${no_snapshots} == 1 ] || unset no_snapshots
+		shift;;
 	--no-incremental-snapshots)
 		no_incremental_snapshots=${no_incremental_snapshots:-1}
 		[ ${no_incremental_snapshots} == 1 ] || unset no_incremental_snapshots
@@ -2425,7 +2429,8 @@ setup(){
 		# allow solana_*
 		sudo ufw allow 8000/tcp comment 'solana_gossip'
 		sudo ufw allow 8900/tcp comment 'solana_websocket'
-		sudo ufw allow 8000:8020/udp comment 'solana_dynamic'
+		yes | sudo ufw delete allow 8000:8020/udp # TODO: remove after upgrading to >= v3.0.0
+		sudo ufw allow 8000:8025/udp comment 'solana_dynamic'
 		relayer_required && sudo ufw ${tpu_quic} comment 'solana_tpu_quic' #|| yes | sudo ufw delete ${tpu_quic}
 		
 		# firedancer
@@ -3431,25 +3436,15 @@ validator(){
 		[ "${status}" != 1 ] && restart_relayer
 	fi
 	
-	# add args from the CLI: options, flags, jito stuff
+	# add args from the CLI: flags, options, jito stuff
 	local args=()
 	
-	# options first
-	if [ "${snapshot_interval_slots}" -gt 0 ]; then
-		args+=("--snapshot-interval-slots ${snapshot_interval_slots}")
-		if [ -z "${no_incremental_snapshots}" ]; then
-			if [ "${full_snapshot_interval_slots}" -gt 0 ]; then
-				args+=("--full-snapshot-interval-slots ${full_snapshot_interval_slots}")
-			fi
-		fi
-		
-		# accounts_db_hash_threads: 1 if snapshots disabled, 2-6 otherwise
-		if [ "${accounts_db_hash_threads:-0}" -lt 2 ]; then
-			unset accounts_db_hash_threads
-		fi
-	elif [ "${snapshot_interval_slots}" == 0 ]; then
-		args+=("--snapshot-interval-slots 0")
-		unset no_incremental_snapshots
+	# flags [01], options
+	[ -n "${only_known_rpc}" ]   && args+=("--only-known-rpc")
+	[ -n "${private_rpc}" ]      && args+=("--private-rpc")
+	[ -n "${no_genesis_fetch}" ] && args+=("--no-genesis-fetch")
+	if [ -n "${no_snapshots}" ]; then
+		args+=("--no-snapshots")
 		unset no_snapshot_fetch
 		
 		# fixed a bug: if snapshots are disabled, accounts directory
@@ -3459,16 +3454,25 @@ validator(){
 		if [ -n "$(ls -A ${d})" ]; then
 			echo "${d}/* ${snapshots}/snapshots/*" | ${sudo} tee ${cleanup} >/dev/null
 		fi
+	else # snapshots enabled
+		[ -n "${no_incremental_snapshots}" ] && args+=("--no-incremental-snapshots")
+		if [ "${snapshot_interval_slots}" -gt 0 ]; then
+			args+=("--snapshot-interval-slots ${snapshot_interval_slots}")
+			if [ -z "${no_incremental_snapshots}" ]; then
+				if [ "${full_snapshot_interval_slots}" -gt 0 ]; then
+					args+=("--full-snapshot-interval-slots ${full_snapshot_interval_slots}")
+				fi
+			fi
+		fi
+		
+		# accounts_db_hash_threads: 1 if snapshots disabled, 2-6 otherwise
+		if [ "${accounts_db_hash_threads:-0}" -lt 2 ]; then
+			unset accounts_db_hash_threads
+		fi
 	fi
 	if [ "${accounts_db_hash_threads:-0}" -gt 0 ]; then
 		args+=("--accounts-db-hash-threads ${accounts_db_hash_threads}")
 	fi
-	
-	# flags after
-	[ -n "${only_known_rpc}" ]   && args+=("--only-known-rpc")
-	[ -n "${private_rpc}" ]      && args+=("--private-rpc")
-	[ -n "${no_genesis_fetch}" ] && args+=("--no-genesis-fetch")
-	[ -n "${no_incremental_snapshots}" ] && args+=("--no-incremental-snapshots")
 	if [ -n "${no_snapshot_fetch}" ]; then
 		# check if the most recent snapshot is provided and it's not
 		# older than --maximum-local-snapshot-age before setting the
