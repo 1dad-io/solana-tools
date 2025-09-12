@@ -1867,7 +1867,7 @@ wait4r(){
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
 		# skip new snapshot check if snapshots are disabled
 		# TODO: check the runtime configuration
-		[ "${snapshot_interval_slots}" == 0 ] && cmd+=" --skip-new-snapshot-check"
+		[ -n "${no_snapshots}" ] && cmd+=" --skip-new-snapshot-check"
 	fi
 	
 	[ -z "${now}" ] && is_running && ${cmd} || echo 'no-wait'
