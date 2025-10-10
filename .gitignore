@@ -19,8 +19,5 @@ solana-tools.*
 *-test*.service
 *shellcheck*
 
-# temporary
-mksnapshot.sh
-
 *~
 .DS_Store
