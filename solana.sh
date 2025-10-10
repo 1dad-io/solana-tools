@@ -2031,9 +2031,9 @@ update(){
 			fi
 		fi
 		
+		[ -n "${git}" ] || error ${err_git_repo}
 		local d=${tool%/*}/${repo}
-		if [ ! -d "${d}" ]; then
-			[ -n "${git}" ] || error ${err_git_repo}
+		if [ ! -d "${d}/.git" ]; then
 			git -C ${tool%/*} clone ${git} --recurse-submodules
 			cd ${d}
 		else
@@ -2053,10 +2053,10 @@ update(){
 		local p=${tool%/*}/solana-patch/$TAG
 		git=${git_solana_patch}
 		if [ -n "${git}" ]; then
-			if [ ! -d "${p%/*}" ]; then
+			if [ ! -d "${p%/*}/.git" ]; then
 				git -C ${tool%/*} clone ${git}
 			else
-				# get the current patch config
+				# find the patch config
 				local f=$(find_conf ${p%/*})
 				
 				# update the repo
@@ -2066,7 +2066,7 @@ update(){
 				git clean -fd
 				cd ${d}
 				
-				# remove the patch config if it was deleted before the repo update
+				# remove the patch config if missing before updating the repo
 				if [ -z "${f}" ]; then
 					f=$(find_conf ${p%/*})
 					rm -fv ${f}
@@ -2152,9 +2152,9 @@ fd_update(){
 			sudo apt install libclang-dev libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make libprotobuf-dev protobuf-compiler -y &>/dev/null
 		fi
 	fi
+	[ -n "${git_firedancer}" ] || error ${err_git_repo}
 	local d=${tool%/*}/firedancer
-	if [ ! -d "${d}" ]; then
-		[ -n "${git_firedancer}" ] || error ${err_git_repo}
+	if [ ! -d "${d}/.git" ]; then
 		git -C ${tool%/*} clone ${git_firedancer} --recurse-submodules
 		cd ${d}
 	else
@@ -2282,9 +2282,9 @@ update_relayer(){
 			sudo apt install libclang-dev libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make libprotobuf-dev protobuf-compiler -y &>/dev/null
 		fi
 	fi
+	[ -n "${git_jito_relayer}" ] || error ${err_git_repo}
 	local d=${tool%/*}/jito-relayer
-	if [ ! -d "${d}" ]; then
-		[ -n "${git_jito_relayer}" ] || error ${err_git_repo}
+	if [ ! -d "${d}/.git" ]; then
 		git -C ${tool%/*} clone ${git_jito_relayer} --recurse-submodules
 		cd ${d}
 	else
