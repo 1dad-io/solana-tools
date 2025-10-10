@@ -1742,10 +1742,10 @@ make_snapshot(){
 	
 	# add args from the systemd unit file
 	local args=()
-	[ -n "${accounts}" ]      && args+=("--accounts ${accounts}")
-	[ -n "${accounts_hash}" ] && args+=("--accounts-hash-cache-path ${accounts_hash}")
-	[ -n "${snapshots}" ]     && args+=("--snapshot-archive-path ${snapshots}")
-	[ -n "${snapshots_inc}" ] && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
+	[ -n "${accounts}" ]       && args+=("--accounts ${accounts}")
+	[ -n "${accounts_index}" ] && args+=("--accounts-index-path ${accounts_index}")
+	[ -n "${snapshots}" ]      && args+=("--snapshots ${snapshots}")
+	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
 	
 	# run the snapshot tool
 	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") --hard-fork ${slot} "$@" -- ${slot} && ok
