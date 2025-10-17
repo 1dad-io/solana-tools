@@ -9,7 +9,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# shellcheck disable=SC2006,SC2155
+# shellcheck disable=SC2004,SC2006,SC2155
 
 # read config
 tool=$HOME/solana-tools/solana.sh
@@ -23,7 +23,7 @@ sudo mkdir -p "${tmp}"
 sudo mv "${snapshots_inc}"/incremental-* "${tmp}" 2>/dev/null || echo "No file(s) to move"
 
 # make a new snapshot <SLOT>
-${tool} make-snapshot $1 \
+${tool} make-snapshot "$1" \
 	--incremental \
 	--deactivate-feature-gate \
 	htsptAwi2yRoZH83SKaUXykeZGtZHgxkS2QwW1pssR8 \
