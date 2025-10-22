@@ -133,7 +133,7 @@ is_staked(){ cmp -s ${keypair} ${staked}; }
 user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R $USER: ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
 [ -n "$SSH_CLIENT" ] && client=`echo $SSH_CLIENT | awk '{print $1}'` || client='systemd'
-dirs=(tower ledger accounts accounts_hash accounts_index accounts_shrink snapshots snapshots_inc)
+dirs=(tower ledger accounts accounts_index accounts_shrink snapshots snapshots_inc)
 tool=`readlink -f $0`
 lang=${tool%/*}/etc/default/${pkg_name}.lang
 term=${tool%/*}/etc/tput.sh
@@ -510,7 +510,6 @@ read_systemd(){
 	ledger=$(get_opt 'ledger')
 	tower=$(get_opt 'tower' ${ledger})
 	accounts=$(get_opt 'accounts' "${ledger}/accounts")
-	accounts_hash=$(get_opt 'accounts-hash-cache-path' "${ledger}/accounts_hash_cache")
 	accounts_index=$(get_opt 'accounts-index-path' "${ledger}/accounts_index")
 	accounts_shrink=$(get_opt 'account-shrink-path')
 	snapshots=$(get_opt 'snapshots' ${ledger})
@@ -3380,6 +3379,8 @@ EOF"
 	ok ${msg_sys_tuned}
 }
 
+add_account_index(){ in_array $1 "${args[@]}" || args+=("--account-index $1"); }
+add_account_index_key(){ in_array $1 "${args[@]}" || args+=("--account-index-include-key $1"); }
 validator(){
 	is_linux || { warn ${err_unsupported_os}; return; }
 	
@@ -3387,17 +3388,6 @@ validator(){
 		${cmd_status}
 		return 0
 	fi
-	
-	add_account_index(){ in_array $1 "${args[@]}" || args+=("--account-index $1"); }
-	add_account_index_key(){ in_array $1 "${args[@]}" || args+=("--account-index-include-key $1"); }
-	cleanup(){
-		[ -z "$1" ] && return 0
-		local d=`echo "$1" | cut -d/ -f 1-3` # /path/to
-		if [ -d "$1" ] && [[ "${d}" == *'ramdisk'* ]]; then
-			sudo rm -rf $1/*
-			log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
-		fi
-	}
 	
 	# remount dirs if VM detected
 	if is_virt; then
@@ -3410,9 +3400,6 @@ validator(){
 	
 	# ensure the log dir exists
 	mklog ${log}
-	
-	# clean up cache on ramdisk
-	cleanup ${accounts_hash}
 	
 	# play 2a,2b failover scenarios
 	local lock=${tool%/*}/watchdog.pid

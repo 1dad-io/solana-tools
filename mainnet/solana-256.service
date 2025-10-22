@@ -40,7 +40,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/data/tower \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
-	--accounts-hash-cache-path /mnt/ramdisk/accounts_hash_cache \
 	--accounts-index-path /mnt/acct/accounts_index \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \

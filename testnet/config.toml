@@ -17,7 +17,6 @@ user = "ubuntu"
 	path = "/mnt/data/ledger"
 	accounts_path = "/mnt/acct/accounts"
 	accounts_index_path = "/mnt/acct/accounts_index"
-	accounts_hash_cache_path = "/mnt/acct/accounts_hash_cache"
 	limit_size = 50_000_000
 	# Names and icons of peer validators will not be displayed in
 	# the GUI unless the program-id index is enabled, which can be
