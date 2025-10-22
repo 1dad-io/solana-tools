@@ -21,8 +21,8 @@ LimitNOFILE=2000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v2.3.6
-Environment=TAG_FD=v0.707.20306
+Environment=TAG=v3.0.6
+Environment=TAG_FD=v0.710.30000
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
