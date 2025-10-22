@@ -104,10 +104,10 @@ debug(){
 }
 
 # versioning stuff
-ver_re='[0-9]+(\.[0-9]+)*'; suffix='(\-[a-z]+){0,1}'
+ver_re='[0-9]+(\.[0-9]+)*'; suffix='(\-[.a-z0-9]+){0,1}'
 is_ver(){ [[ "$1" =~ ^${ver_re}${suffix}$ ]]; }
-is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
-tag2ver(){ is_tag "$1" && echo "$1" | sed 's/[^0-9.]*//g' || echo "$1"; }
+is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
+tag2ver(){ is_tag "$1" && echo "$1" | sed -E "s/${suffix}//g" | sed 's/[^.0-9]*//g' || echo "$1"; }
 cmp_ver(){
 	[ $# -eq 2 ] || error ${err_arg_count}
 	is_ver "$1"  || error ${err_version} 1
@@ -1990,9 +1990,8 @@ update(){
 	fi
 	
 	# display the menu
-	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; }
+	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; } || tag='vVERSION'
 	tag=${tag//VERSION/${version}}
-	
 	# check if it's already installed
 	if [ "$TAG" == "${tag}" -a -f "${solana}" ]; then
 		local str=${err_installed//VERSION/${version}}
