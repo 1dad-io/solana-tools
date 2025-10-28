@@ -2427,7 +2427,6 @@ setup(){
 		# allow solana_*
 		sudo ufw allow 8000/tcp comment 'solana_gossip'
 		sudo ufw allow 8900/tcp comment 'solana_websocket'
-		yes | sudo ufw delete allow 8000:8020/udp # TODO: remove after upgrading to >= v3.0.0
 		sudo ufw allow 8000:8025/udp comment 'solana_dynamic'
 		relayer_required && sudo ufw ${tpu_quic} comment 'solana_tpu_quic' #|| yes | sudo ufw delete ${tpu_quic}
 		
