@@ -2313,6 +2313,7 @@ update_relayer(){
 }
 
 # functions: setup
+doublezero_enabled(){ return 0; }
 setup(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	LOG=y
@@ -2364,11 +2365,6 @@ setup(){
 		# cleanup
 		# TODO: ufw_purge_unlisted # except the current ${client}
 		ufw_purge_unbound
-		
-		# jito-relayer
-		# relayer 11226/tcp (grpc_bind_port) to run on a separate host
-		# relayer 11228:11229/udp (tpu_quic_port:tpu_quic_forward_port)
-		local tpu_quic="allow 11228:11229/udp"
 		
 		# TPU quic handshake rate limiting
 		local f=/etc/ufw/before.rules
@@ -2425,27 +2421,49 @@ setup(){
 		fi
 		
 		# allow solana_*
-		sudo ufw allow 8000/tcp comment 'solana_gossip'
-		sudo ufw allow 8900/tcp comment 'solana_websocket'
+		sudo ufw allow 8000/tcp      comment 'solana_gossip'
+		sudo ufw allow 8900/tcp      comment 'solana_websocket'
 		sudo ufw allow 8000:8025/udp comment 'solana_dynamic'
-		relayer_required && sudo ufw ${tpu_quic} comment 'solana_tpu_quic' #|| yes | sudo ufw delete ${tpu_quic}
 		
-		# firedancer
+		# allow jito-relayer
+		# relayer 11226/tcp (grpc_bind_port) to run on a separate host
+		# relayer 11228:11229/udp (tpu_quic_port:tpu_quic_forward_port)
+		local tpu_quic="allow 11228:11229/udp"
+		if relayer_required; then
+			sudo ufw ${tpu_quic} comment 'solana_tpu_quic'
+		else
+			yes | sudo ufw delete ${tpu_quic}
+		fi
+		
+		# allow firedancer
 		if fd_enabled; then
-			# sudo ufw allow 443/tcp comment 'solana_gui_fd'
-			sudo ufw allow 8001/tcp comment 'solana_gossip_fd'
-			sudo ufw allow 8900:9000/udp comment 'solana_dynamic_fd'
+			sudo ufw allow 8001/tcp      comment 'solana_fd_gossip'
+			sudo ufw allow 8900:9000/udp comment 'solana_fd_dynamic'
+		fi
+		
+		# allow doublezero
+		# doublezero uses link-local address space: 169.254.0.0/16 for
+		# the GRE tunnel between a validator and the DoubleZero Device
+		local dz_in="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
+		local dz_out="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
+		if doublezero_enabled; then
+			yes | sudo ufw delete deny out from any to 169.254.0.0/16 # TODO: remove after installing doublezero
+			sudo ufw ${dz_in}  comment 'solana_dz_in'
+			sudo ufw ${dz_out} comment 'solana_dz_out'
+		else
+			yes | sudo ufw delete ${dz_in}
+			yes | sudo ufw delete ${dz_out}
 		fi
 		
 		# block outgoing traffic to private networks
-		sudo ufw deny out from any to 10.0.0.0/8 comment 'private'
-		sudo ufw deny out from any to 100.64.0.0/10 comment 'private'
-		sudo ufw deny out from any to 102.0.0.0/8 comment 'private'
+		sudo ufw deny out from any to 10.0.0.0/8     comment 'private'
+		sudo ufw deny out from any to 100.64.0.0/10  comment 'private'
+		sudo ufw deny out from any to 102.0.0.0/8    comment 'private'
 		# blocking 169.254.0.0/16 inside a VM could block DNS resolution
 		is_virt || sudo ufw deny out from any to 169.254.0.0/16 comment 'private'
-		sudo ufw deny out from any to 172.16.0.0/12 comment 'private'
+		sudo ufw deny out from any to 172.16.0.0/12  comment 'private'
 		sudo ufw deny out from any to 192.168.0.0/16 comment 'private'
-		sudo ufw deny out from any to 198.18.0.0/15 comment 'private'
+		sudo ufw deny out from any to 198.18.0.0/15  comment 'private'
 		
 		[ "${reload}" == 1 ] && sudo ufw reload
 		sudo ufw status | grep -q inactive && sudo ufw enable
