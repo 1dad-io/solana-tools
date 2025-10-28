@@ -2442,12 +2442,12 @@ setup(){
 		fi
 		
 		# allow doublezero
-		# doublezero uses link-local address space: 169.254.0.0/16 for
+		# DoubleZero uses link-local address space: 169.254.0.0/16 for
 		# the GRE tunnel between a validator and the DoubleZero Device
 		local dz_in="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
 		local dz_out="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
 		if doublezero_enabled; then
-			yes | sudo ufw delete deny out from any to 169.254.0.0/16 # TODO: remove after installing doublezero
+			yes | sudo ufw delete deny out from any to 169.254.0.0/16
 			sudo ufw ${dz_in}  comment 'solana_dz_in'
 			sudo ufw ${dz_out} comment 'solana_dz_out'
 		else
