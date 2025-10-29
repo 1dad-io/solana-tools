@@ -266,7 +266,6 @@ save_conf(){
 opt_val(){ echo "$1" | sed -e 's%^--[^=]*=%%g; s%^-[^=]*=%%g'; }
 known_id=()
 pos_args=()
-action=help
 while test $# -gt 0; do
 	case "$1" in
 	# flags [01]
@@ -450,15 +449,21 @@ while test $# -gt 0; do
 	check-snapshot|make-snapshot|\
 	wait-for-restart|trim|start|stop|restart|update|\
 	jito-reload|relayer|restart-relayer|update-relayer|\
+	dz|\
 	setup|\
 	txtower|rxtower|vote-off|vote-on|watchdog|\
 	cpu-tuner|sys-tuner|validator)
-		[ "$1" == 'export' ] && action=${1}_ || action=${1//-/_}
-		[ "$1" == 'wait-for-restart' ] && action=wait4r
-		if [[ "txtower" == *${1}* ]]; then
-			# we need the watchdog to be idle here
-			PIDFILE=${tool%/*}/watchdog.pid
-			PIDWAIT=${lock_timeout}
+		# isolate action from subcommands
+		if [ -n "${action}" ]; then
+			pos_args+=("$1") 
+		else
+			[ "$1" == 'export' ] && action=${1}_ || action=${1//-/_}
+			[ "$1" == 'wait-for-restart' ] && action=wait4r
+			if [[ "txtower" == *${1}* ]]; then
+				# we need the watchdog to be idle here
+				PIDFILE=${tool%/*}/watchdog.pid
+				PIDWAIT=${lock_timeout}
+			fi
 		fi
 		shift;;
 	*)
@@ -506,6 +511,9 @@ read_systemd(){
 	if ! is_pub ${vote_acc}; then
 		[ "${vote_acc}" == "${vote_acc##*/}" ] && vote_acc=${keypair%/*}/${vote_acc}
 	fi
+	
+	# doublezero
+	[ "${dz_keypair}" == "${dz_keypair##*/}" ] && dz_keypair=${keypair%/*}/${dz_keypair}
 	
 	ledger=$(get_opt 'ledger')
 	tower=$(get_opt 'tower' ${ledger})
@@ -594,12 +602,18 @@ set_cmd(){
 	cmd_stop="${cmd_exec} systemctl stop ${old_unit:-${unit}}"
 	cmd_trim="${cmd_exec} /usr/sbin/fstrim -av"
 	cmd_wait="${cmd_exec} ${validator} -l ${ledger} wait-for-restart-window"
+	
 	# jito-relayer
 	cmd_relayer_status="${cmd_exec} systemctl status ${relayerd}"
 	cmd_relayer_restart="${cmd_exec} systemctl restart ${relayerd}"
+	
 	# firedancer
 	# fixed a bug: OPTIONS must now be specified after SUBCOMMAND
 	cmd_fd="${cmd_exec} ${fdctl} CMD --config ${fd_conf}"
+	
+	# doublezero
+	cmd_dz_restart="${cmd_exec} systemctl restart ${dz_systemd}"
+	cmd_dz_status="${cmd_exec} systemctl status ${dz_systemd}"
 }; set_cmd
 
 # functions
@@ -699,6 +713,7 @@ help(){
 	echo -e "        ${CG}bind${NC} [HOST] [PUBKEY]       Pair the remote validator for identity transition"
 	echo -e "        ${CG}check-snapshot${NC} [NUM_SLOTS] Check if snapshot is less than this many slots behind [default: ${snapshots_age}]"
 	echo -e "        ${CG}cpu-tuner${NC} [GOVERNOR]       Tune CPU settings for the given governor [default: $(get_gov)]"
+	echo -e "        ${CG}dz${NC} <SUBCOMMAND>            Run doublezero with any: up/down/fetch/fund/init/setup etc"
 	echo -e "        ${CG}export${NC} <bin|log|tower>     Export environment variables"
 	echo -e "        ${CG}jito-reload${NC}                Hot reload the Jito configuration"
 	echo -e "        ${CG}leader-slot${NC} [-1]           Show countdown to the next leader slot"
@@ -1993,7 +2008,7 @@ update(){
 	tag=${tag//VERSION/${version}}
 	# check if it's already installed
 	if [ "$TAG" == "${tag}" -a -f "${solana}" ]; then
-		local str=${err_installed//VERSION/${version}}
+		local str=${err_installed//PKG/${tag}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
@@ -2131,7 +2146,7 @@ fd_update(){
 	
 	# check if it's already installed
 	if [ "$TAG_FD" == "${tag}" -a -f "${fdctl}" ]; then
-		local str=${err_installed//VERSION/${version}}
+		local str=${err_installed//PKG/${tag}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
@@ -2261,7 +2276,7 @@ update_relayer(){
 	
 	# check if it's already installed
 	if [ "$RELAYER_TAG" == "${tag}" -a -f "${relayer}" ]; then
-		local str=${err_installed//VERSION/${version}}
+		local str=${err_installed//PKG/${tag}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
@@ -2312,8 +2327,124 @@ update_relayer(){
 	! is_staked && is_main && relayer_running && restart_relayer || :
 }
 
+# functions: doublezero
+dz_enabled(){ [ "${dz_enabled}" == 1 ]; }
+dz_init(){
+	is_staked  || error ${err_unstaked}
+	
+	local opt="-u ${moniker} -k ${staked}"
+	local pub=`${keygen} pubkey ${staked}`
+	local dz_pub=`${dz} address`
+	if [ -n "${ssh_bind}" ]; then
+		local arg="--backup-validator-ids ${ssh_bind}"
+		local arg2=",backup_ids=${ssh_bind}"
+	fi
+	
+	# attest validator ownership
+	${dz_solana} passport find-validator -u ${moniker}
+	
+	# prepare the connection
+	${dz_solana} passport prepare-validator-access -u ${moniker} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg}
+	
+	# generate signature
+	local sig=`${solana} sign-offchain-message service_key=${dz_pub}${arg2} -k ${staked}`
+	
+	# initiate a connection request
+	${dz_solana} passport request-validator-access ${opt} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg} --signature ${sig} \
+		&& ok || err
+}
+dz_pda_fetch(){
+	local pub=`${keygen} pubkey ${staked}`
+	[ -z "${quiet}" ] || local arg='-b'
+	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n ${pub} ${arg}
+}
+dz_pda_fund(){
+	local opt="-u ${moniker} -k ${staked}"
+	local pub=`${keygen} pubkey ${staked}`
+	local min=0.000000001
+	${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} --fund ${1:-${min}}
+}
+dz_setup(){
+	is_linux || error ${err_unsupported_os}
+	
+	# check if it's already installed
+	if [ -f "${dz}" ]; then
+		local str=${err_installed//PKG/doublezero}
+		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
+	else
+		# install doublezero
+		curl -1sLf ${url_doublezero} | sudo -E bash
+		get_pkg doublezero
+	fi
+	
+	# create the doublezero config directory
+	mkdir -p $HOME/.config/doublezero
+	
+	# ensure the doublezero keypair exists
+	local f=${dz_keypair}
+	if [ ! -f "${f}" ]; then
+		info ${msg_setup_dz_keypair}
+		mkdir -p ${f%/*}
+		info `${dz} keygen -o ${f}`
+		chmod 600 ${f}
+	else
+		local pub=`${dz} address`
+		local str=${msg_setup_keypair//PUBKEY/${pub}}
+		info ${str//TYPE/doublezero}
+	fi
+	
+	# make `dz_keypair` a symlink to the doublezero default keypair
+	ln -s ${dz_keypair} $HOME/.config/doublezero/id.json 2>/dev/null || :
+	
+	# configure environment
+	local d=/etc/systemd/system/doublezerod.service.d
+	sudo mkdir -p ${d}
+	echo -e "[Service]\nExecStart=\nExecStart=/usr/bin/doublezerod -sock-file /run/doublezerod/doublezerod.sock -env ${moniker}" | sudo tee ${d}/override.conf >/dev/null
+	sudo systemctl daemon-reload && ${cmd_dz_restart}
+	${dz} config set --env ${moniker} >/dev/null
+	info "${msg_pkg_configured//PKG/${dz_systemd}} for ${moniker}"
+	
+	ok ${msg_pkg_installed//PKG/doublezero}
+}
+dz_user_list(){
+	local pub=`${dz} address`
+	${dz} user list | grep ${pub}
+}
+dz(){
+	dz_enabled || error ${msg_pkg_disabled//PKG/doublezero}
+	
+	# process the subcommand
+	case "$1" in
+	address|balance|latency|status)
+		${dz} "$1"
+		return;;
+	up)
+		${dz} connect ibrl
+		return;;
+	down)
+		${dz} disconnect
+		return;;
+	pda)
+		dz_pda_fetch
+		return;;
+	fund)
+		dz_pda_fund ${2:-}
+		return;;
+	init)
+		dz_init
+		return;;
+	setup)
+		dz_setup
+		return;;
+	user)
+		dz_user_list
+		return;;
+	*)
+		error ${err_arg};;
+	esac
+}
+
 # functions: setup
-doublezero_enabled(){ return 0; }
 setup(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	LOG=y
@@ -2446,7 +2577,7 @@ setup(){
 		# the GRE tunnel between a validator and the DoubleZero Device
 		local dz_in="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
 		local dz_out="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
-		if doublezero_enabled; then
+		if dz_enabled; then
 			yes | sudo ufw delete deny out from any to 169.254.0.0/16
 			sudo ufw ${dz_in}  comment 'solana_dz_in'
 			sudo ufw ${dz_out} comment 'solana_dz_out'
@@ -3539,7 +3670,8 @@ validator(){
 }
 
 # main
+[ -z "${action}" ] && action=help
 pid_lock ${PIDFILE//ACTION/${action}} $PIDWAIT
-$action "$@"
+${action} "$@"
 pid_unlock $PIDFILE
 # EOF
