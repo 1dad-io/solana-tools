@@ -2440,7 +2440,7 @@ dz(){
 		dz_user_list
 		return;;
 	*)
-		error ${err_arg};;
+		[ -z "$1" ] && ${dz} status || error ${err_arg};;
 	esac
 }
 
