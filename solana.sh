@@ -713,7 +713,7 @@ help(){
 	echo -e "        ${CG}bind${NC} [HOST] [PUBKEY]       Pair the remote validator for identity transition"
 	echo -e "        ${CG}check-snapshot${NC} [NUM_SLOTS] Check if snapshot is less than this many slots behind [default: ${snapshots_age}]"
 	echo -e "        ${CG}cpu-tuner${NC} [GOVERNOR]       Tune CPU settings for the given governor [default: $(get_gov)]"
-	echo -e "        ${CG}dz${NC} <SUBCOMMAND>            Run doublezero with any: up/down/fetch/fund/init/setup etc"
+	echo -e "        ${CG}dz${NC} [SUBCOMMAND]            Run doublezero with any: up/down/pda/fund/init/setup/user etc"
 	echo -e "        ${CG}export${NC} <bin|log|tower>     Export environment variables"
 	echo -e "        ${CG}jito-reload${NC}                Hot reload the Jito configuration"
 	echo -e "        ${CG}leader-slot${NC} [-1]           Show countdown to the next leader slot"
