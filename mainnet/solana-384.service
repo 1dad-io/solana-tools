@@ -14,7 +14,7 @@ RestartSec=1
 LimitNOFILE=2000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
-Environment=TAG=v3.0.6-jito.1
+Environment=TAG=v3.0.8-jito
 # [Amsterdam]
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
 # Environment="RELAYER_URL=http://amsterdam.mainnet.relayer.jito.wtf:8100"
