@@ -2355,14 +2355,19 @@ dz_init(){
 }
 dz_pda_fetch(){
 	local pub=`${keygen} pubkey ${staked}`
-	[ -z "${quiet}" ] || local arg='-b'
+	[ -n "${quiet}" ] && local arg='-b' || local arg=
 	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n ${pub} ${arg}
 }
 dz_pda_fund(){
+	LOG=y
 	local opt="-u ${moniker} -k ${staked}"
 	local pub=`${keygen} pubkey ${staked}`
-	local min=0.000000001
-	${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} --fund ${1:-${min}}
+	local arg='--initialize' resp
+	[ `echo "${1:-0} >= 0.000000001" | bc -l` == 1 ] && arg="--fund ${1}"
+	resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
+	quiet=1; resp=$(dz_pda_fetch) || error "${resp}"
+	info "pda=${resp}"
+	unset LOG
 }
 dz_setup(){
 	is_linux || error ${err_unsupported_os}
