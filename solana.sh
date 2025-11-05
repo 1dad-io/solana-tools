@@ -2418,13 +2418,27 @@ dz_pda_fetch(){
 
 dz_pda_fund(){
 	LOG=y
+	
 	local opt="-u ${moniker} -k ${staked}"
 	local pub=`${keygen} pubkey ${staked}`
-	local arg='--initialize' resp
-	[ `echo "${1:-0} >= 0.000000001" | bc -l` == 1 ] && arg="--fund ${1}"
-	resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
-	quiet=1; resp=$(dz_pda_fetch) || error "${resp}"
-	info "funded=${1:-0},pda=${resp}"
+	local arg resp str
+	if [ `echo "${1:-0} >= 0.000000001" | bc -l` == 1 ]; then
+		arg="--fund ${1}"
+		str=${msg_dz_pda_fund_yn//AMOUNT/${1}}
+	else
+		arg='--initialize'
+		str=${msg_dz_pda_init_yn}
+	fi
+	
+	read -p "${str}"
+	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
+		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
+		quiet=1; resp=$(dz_pda_fetch) || error "${resp}"
+		info "funded=${1:-0},pda=${resp}"
+	else
+		info ${msg_aborted}
+	fi
+	
 	unset LOG
 }
 
@@ -2460,18 +2474,12 @@ dz_pda_fees(){
 		error ${err_arg_numeric//ARG/pda}
 	else
 		local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
-		local fees=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
-		local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
-		local funding=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
-		info "due=${fees},pda=${pda},debt=${debt},funding=${funding}"
-		if [ "${funding}" == Y ]; then
-			# interactive mode
-			read -p "${msg_dz_pda_fund_yn//AMOUNT/${debt}}"
-			if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
-				dz_pda_fund ${debt}
-			else
-				info ${msg_aborted}
-			fi
+		local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9g'`
+		local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9g'`
+		local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
+		info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
+		if [ "${fund}" == Y ]; then
+			dz_pda_fund ${debt}
 		fi
 	fi
 	unset LOG
