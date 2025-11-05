@@ -2410,13 +2410,13 @@ dz_init(){
 		&& ok || err
 }
 
-dz_pda_fetch(){
+pda_fetch(){
 	local pub=`${keygen} pubkey ${staked}`
 	[ -n "${quiet}" ] && local arg='-b' || local arg=
 	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n ${pub} ${arg}
 }
 
-dz_pda_fund(){
+pda_fund(){
 	LOG=y
 	
 	local opt="-u ${moniker} -k ${staked}"
@@ -2433,7 +2433,7 @@ dz_pda_fund(){
 	read -p "${str}"
 	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
 		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
-		quiet=1; resp=$(dz_pda_fetch) || error "${resp}"
+		quiet=1; resp=$(pda_fetch) || error "${resp}"
 		info "funded=${1:-0},pda=${resp}"
 	else
 		info ${msg_aborted}
@@ -2442,7 +2442,7 @@ dz_pda_fund(){
 	unset LOG
 }
 
-dz_pda_fees(){
+pda_fees(){
 	# verify the cluster
 	[ "${moniker}" != 'mainnet-beta' ] && error ${err_unsupported_cluster}
 	
@@ -2469,7 +2469,7 @@ dz_pda_fees(){
 	
 	# calc the amount due for payment
 	local pub=`${keygen} pubkey ${staked}` pda
-	quiet=1; pda=$(dz_pda_fetch) || error "${pda}"
+	quiet=1; pda=$(pda_fetch) || error "${pda}"
 	if ! is_num ${pda}; then
 		error ${err_arg_numeric//ARG/pda}
 	else
@@ -2479,9 +2479,10 @@ dz_pda_fees(){
 		local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
 		info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
 		if [ "${fund}" == Y ]; then
-			dz_pda_fund ${debt}
+			pda_fund ${debt}
 		fi
 	fi
+	
 	unset LOG
 }
 
@@ -2544,11 +2545,11 @@ dz(){
 	down)
 		${dz} disconnect;;
 	pda)
-		dz_pda_fetch;;
+		pda_fetch;;
 	fees)
-		dz_pda_fees ${2:-};;
+		pda_fees ${2:-};;
 	fund)
-		dz_pda_fund ${2:-};;
+		pda_fund ${2:-};;
 	init)
 		dz_init;;
 	setup)
