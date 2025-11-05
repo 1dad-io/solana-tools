@@ -20,7 +20,7 @@ __num(){ (( $1 )) && echo "$3" || echo "$5"; }
 __str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
 __fun(){ if $1; then echo "$3"; else echo "$5"; fi; }
 
-# script reporting
+# BEGIN reporting
 is_num(){ [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]]; }
 in_array(){
 	local v=${1-}; shift
@@ -107,8 +107,9 @@ debug(){
 	[ -n "$SMS" ] && sms "${*:-${str}}" ${fn}
 	echo -e "${LN}${fn}:${NC} ${*:-${str}}"
 }
+# END reporting
 
-# versioning stuff
+# BEGIN versioning
 ver_re='[0-9]+(\.[0-9]+)*'; suffix='(\-[.a-z0-9]+){0,1}'
 is_ver(){ [[ "$1" =~ ^${ver_re}${suffix}$ ]]; }
 is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
@@ -119,8 +120,9 @@ cmp_ver(){
 	is_ver "$2"  || error ${err_version} 2
 	printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
+# END versioning
 
-# variables
+# BEGIN vars/types
 is_cidr(){
 	local A B C D N
 	IFS="./" read -r A B C D N <<< "$1"; unset IFS
@@ -168,8 +170,9 @@ wd_boot=${tool%/*}/${pkg_name}.wd-boot
 wd_data=${tool%/*}/${pkg_name}.wd-data
 wd_ping=${tool%/*}/${pkg_name}.wd-ping
 wd_start=${tool%/*}/${pkg_name}.restart
+# END vars/types
 
-# read the config
+# BEGIN config
 ceil(){ echo "$1" | sed -e 's/\.0*$//;s/\.[0-9]*$/+1/' | bc; }
 read_conf(){
 	if [ ! -f "$CFGFILE" ]; then
@@ -272,8 +275,9 @@ save_conf(){
 	[ $# -eq 2 ] || error ${err_arg_count}
 	sed -i --follow-symlinks "s|^[#]*\($1\s*=\s*\).*\$|\1$2|" $CFGFILE || error ${err_file_write//FILE/$CFGFILE}
 }
+# END config
 
-# get options from the CLI
+# BEGIN options-cli
 opt_val(){ echo "$1" | sed -e 's%^--[^=]*=%%g; s%^-[^=]*=%%g'; }
 known_id=()
 pos_args=()
@@ -488,9 +492,9 @@ done
 # restore the positional arguments
 set -- "${pos_args[@]}"
 unset pos_args opt
-# end of options from the CLI
+# END options-cli
 
-# get options from the systemd unit file(s)
+# BEGIN options-systemd
 get_env(){ cat $FILE | sed -n "s/.*$1=\(\)/\1/p" | awk '{print $1}' | tr -d '"'; }
 get_opt(){ local v=`cat $FILE | sed -n "s/--$1\(=\|[[:space:]]\)\+//p"`; echo ${v} | awk -v fb="$2" '{print ($1==""?fb:$1)}'; }
 get_systemd(){
@@ -555,8 +559,9 @@ read_relayerd(){
 	fi
 	unset FILE
 }; read_relayerd
+# END options-systemd
 
-# crates
+# BEGIN binaries
 set_bin(){
 	local release version=$(tag2ver "$TAG")
 	if is_tag $TAG jito; then # jito-solana
@@ -588,8 +593,9 @@ set_bin(){
 	# jito-relayer
 	is_tag $RELAYER_TAG && relayer=${d}/relayer/$RELAYER_TAG/jito-transaction-relayer
 }; set_bin
+# END binaries
 
-# commands
+# BEGIN commands
 set_cmd(){
 	is_macos && cmd_ctime="/usr/bin/stat -f %B" || cmd_ctime="stat -c %W"
 	is_macos && cmd_mtime="/usr/bin/stat -f %m" || cmd_mtime="stat -c %Y"
@@ -626,55 +632,159 @@ set_cmd(){
 	cmd_dz_restart="${cmd_exec} systemctl restart ${dz_systemd}"
 	cmd_dz_status="${cmd_exec} systemctl status ${dz_systemd}"
 }; set_cmd
+# END commands
 
-# functions
+# BEGIN one-liners
 export_(){ [ -z "$1" ] && error ${err_arg}; local var=$1; echo ${!var}; }
 get_gov(){ [ "${cpu_gov}" != 'disabled' ] && echo ${cpu_gov} || echo ${cpu_gov_default}; }
-mkalias(){ [ -z "$1" ] && error ${err_arg}; local var="x$1" len=${2:-6}; [ -n "${!var}" ] && echo ${!var} || echo ${var:1:${len}}; }
 monitor(){ ${cmd_exec} ${validator} -l ${ledger} monitor; }
 on_boot(){ date >${wd_boot} 2>/dev/null; log "$(rm -fv ${oldunit})"; log "$(rm -fv ${tool%/*}/*.pid)"; }
 starter(){ if [ -z "${reboot}" ]; then ${cmd_reload} && ${cmd_start} && date >${wd_start} 2>/dev/null; else echo 'no-start'; fi; }
 stopper(){ ${cmd_stop}; if [ -s "${oldunit}" ]; then rm -f ${oldunit} && setup_log ${log}; else echo 'no-leftover'; fi; }
 truncate(){ [ -f "$1" ] || return 0; sed -e :a -e "\$q;N;$((${2:-10}+1)),\$D;ba" -i --follow-symlinks $1 2>/dev/null; }
+# END one-liners
 
-unswap(){
-	is_linux || error ${err_unsupported_os}
+# BEGIN common
+assert_allowed(){
+	[ -n "$1" ] || return 0
+	local str=$(__fun is_staked ? staked : unstaked)
+	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
+}
+
+cp_conf(){
+	[ -n "$1" ] || error ${err_arg}
+	local f=${tool%/*}$1
+	[ -f "${f}" ] || error ${err_file_read//FILE/${f}}
 	
-	local res=`free`
-	local mem=`echo "${res}"   | grep -i 'Mem:'`
-	local swap=`echo "${res}"  | grep -i 'Swap:'`
-	local used=`echo "${swap}" | awk '{printf "%lu", $3}'`
-	local free=`echo "${mem}"  | awk '{printf "%lu", $4}'`
-	local cache=`echo "${mem}" | awk '{printf "%lu", $6}'`
-	local avail=`echo "${mem}" | awk '{printf "%lu", $7}'`
-	local total=$((${free}+${cache}+${avail}))
+	# back up a target file
+	sudo cp -v ${no_clobber} ${2:-$1}{,~} 2>/dev/null || :
 	
-	echo -e "Free mem:\t$((${total}/1024/1024)) GB"
-	echo -e "Used swap:\t$((${used}/1024/1024)) GB"
+	# compare source and target files
+	sudo cmp -s ${f} ${2:-$1} && local flags='-uv' || local flags='-v'
 	
-	if [ "${used}" -eq 0 ]; then
-		warn "No swap is in use"
-	elif [ "${used}" -lt "${total}" ]; then
-		local str="Freeing swap (this could take a while)"
-		is_dryrun && str+=" ${tip_dryrun}"
-		info ${str}
-		if ! is_dryrun; then
-			sudo swapoff -a
-			sudo swapon -a
+	# return 0 if the file copied, 1 otherwise
+	[[ "$(sudo cp ${flags} ${f} ${2:-$1} 2>/dev/null)" =~ \-\> ]]
+}
+
+curr_epoch(){
+	local opt="-u ${1:-${moniker}}"
+	local epoch=`${solana} ${opt} epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
+	echo ${epoch}
+}
+
+elapsed(){
+	[ -n "$1" ] || error ${err_arg}
+	local T=$1
+	local D=$(($T/60/60/24))
+	local H=$(($T/60/60%24))
+	local M=$(($T/60%60))
+	local S=$(($T%60))
+	(( $D > 0 )) && printf '%dd ' $D
+	(( $H > 0 )) && printf '%dh ' $H
+	(( $M > 0 )) && printf '%dm ' $M
+	# (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+	printf '%ds\n' $S
+}
+
+get_pkg(){
+	[ $# -gt 0 ] || error ${err_arg}
+	for pkg in "$@"; do
+		if is_linux; then
+			apt info      ${pkg} &>/dev/null || error ${err_pkg_unsupported//PKG/${pkg}}
+			dpkg --verify ${pkg} &>/dev/null || sudo apt install ${pkg} -y &>/dev/null
+		elif is_macos; then
+			if ! which ${pkg} &>/dev/null; then
+				local blacklist='ufw'
+				[[ "${blacklist}" == *${pkg}* ]] && error ${err_pkg_unsupported_os//PKG/${pkg}}
+				which brew       &>/dev/null || sh -c "$(curl -fsSL ${url_homebrew})"
+				brew info ${pkg} &>/dev/null || error ${err_pkg_unsupported//PKG/${pkg}}
+				brew list ${pkg} &>/dev/null || brew install ${pkg} &>/dev/null
+			fi
+		else
+			error ${err_unsupported_os}
 		fi
-		ok
-	else
-		error "Not enough memory"
+	done
+}
+
+get_wanip(){
+	local res; res=$(get_pkg wget) || log "${res}" # isolated
+	local cmd_wget="wget -4 -qO- --tries=1 --timeout=${rpc_conn_timeout} --read-timeout=${rpc_max_time}"
+	local dig_opt="-4 +short +timeout=${rpc_conn_timeout} +tries=1 +retry=0"
+	is_linux || dig_opt=${dig_opt//timeout/time}
+	local started=`date +%s` ip
+	for i in `seq 1 ${rpc_retry}`; do
+		ip=`dig @resolver1.opendns.com myip.opendns.com ${dig_opt} 2>/dev/null` || ip=
+		if ! is_ip ${ip}; then
+			ip=`dig @ns1.google.com o-o.myaddr.1.google.com TXT ${dig_opt} 2>/dev/null` || ip=
+			ip=`echo ${ip} | tr -d '"'`
+		fi
+		if ! is_ip ${ip}; then ip=`${cmd_wget} http://ifconfig.me/ip`; fi
+		if ! is_ip ${ip}; then ip=`${cmd_wget} http://ipinfo.io/ip`; fi
+		if ! is_ip ${ip}; then ip=`${cmd_wget} http://icanhazip.com`; fi
+		is_ip ${ip} && break
+		local elapsed=$(($(date +%s)-$started))
+		if (($elapsed >= ${rpc_retry_max_time})); then
+			log "${err_timeout//TIME/$(elapsed ${rpc_retry_max_time})}"
+			break
+		fi
+		sleep ${rpc_retry_delay}
+	done
+	is_ip ${ip} && echo ${ip}
+}
+
+is_virt(){
+	is_linux || { warn ${err_unsupported_os}; return 1; }
+	get_pkg virt-what
+	local facts; facts=`sudo virt-what`
+	local status=$?
+	[ ${status} -ne 0 ] && error "${status}"
+	# return 0 if VM detected, 1 otherwise
+	[ -n "${facts}" ]
+}
+
+mkalias(){
+	if [ -z "$1" ]; then
+		echo 'misconfigured'
+		return 1
+	fi
+	local var="x$1" len=${2:-6}
+	[ -n "${!var}" ] && echo ${!var} || echo ${var:1:${len}}
+}
+
+pid_lock(){
+	LOG=y
+	while [ -f "$1" ] && kill -0 $(<$1) &>/dev/null; do # ex: ps -p $$
+		if [ "${2:-0}" == 0 ]; then
+			error ${err_pid_exists//FILE/$1}
+		elif (( $SECONDS >= ${2:-0} )); then
+			local str=${err_pid_lock//FILE/$1}
+			error ${str//TIME/$(elapsed ${2:-0})}
+		fi
+		sleep 1
+	done
+	
+	# make sure the lock file is removed on exit
+	local str=`trap -p EXIT`
+	[ -z "${str}" ] && trap "pid_unlock $1" EXIT
+	
+	# create a lock file
+	echo -n $$ | ${sudo} tee $1 >/dev/null || error ${err_pid_write//FILE/$1}
+	SECONDS=0
+	unset LOG
+}
+pid_unlock(){ ${sudo} rm -f $1; }
+
+remount(){
+	[ -z "$1" ] && return 0
+	local d=`echo "$1" | cut -d/ -f 1-3` # /path/to
+	if grep -q "${d}" /etc/fstab 2>/dev/null; then
+		grep -q "${d}" /proc/mounts 2>/dev/null || sudo mount "${d}"
 	fi
 }
 
-usage(){
-	local arr=("${log%/*}") d
-	for d in "${dirs[@]}"; do arr+=("${!d}"); done
-	arr=(`printf '%s\n' "${arr[@]}" | sort`)
-	du -hs $(implode ' ' "${arr[@]}") 2>/dev/null
-}
+# END common
 
+# BEGIN help
 title(){
 	local str=${1//PKG/${pkg_name}}
 	echo ${str//VERSION/${pkg_version}}
@@ -757,21 +867,9 @@ help(){
 	echo -e "The default command is -h"
 	return 0
 }
+# END help
 
-elapsed(){
-	[ -n "$1" ] || error ${err_arg}
-	local T=$1
-	local D=$(($T/60/60/24))
-	local H=$(($T/60/60%24))
-	local M=$(($T/60%60))
-	local S=$(($T%60))
-	(( $D > 0 )) && printf '%dd ' $D
-	(( $H > 0 )) && printf '%dh ' $H
-	(( $M > 0 )) && printf '%dm ' $M
-	# (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
-	printf '%ds\n' $S
-}
-
+# BEGIN airdrop/rebalance
 tx(){
 	local recipient=$1
 	local from_addr=$2
@@ -810,12 +908,6 @@ tx(){
 	
 	# return 0 if successful, 1 otherwise
 	[ -n "${resp}" -a -n "${conf}" ] || [ -z "${resp}" -a -n "${txid}" ]
-}
-
-assert_allowed(){
-	[ -n "$1" ] || return 0
-	local str=$(__fun is_staked ? staked : unstaked)
-	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
 }
 
 precheck(){
@@ -978,28 +1070,9 @@ balance(){
 	unset LOG
 	(( ${amount} > 0 )) && ok || error
 }
+# END airdrop/rebalance
 
-cp_conf(){
-	[ -n "$1" ] || error ${err_arg}
-	local f=${tool%/*}$1
-	[ -f "${f}" ] || error ${err_file_read//FILE/${f}}
-	
-	# back up a target file
-	sudo cp -v ${no_clobber} ${2:-$1}{,~} 2>/dev/null || :
-	
-	# compare source and target files
-	sudo cmp -s ${f} ${2:-$1} && local flags='-uv' || local flags='-v'
-	
-	# return 0 if the file copied, 1 otherwise
-	[[ "$(sudo cp ${flags} ${f} ${2:-$1} 2>/dev/null)" =~ \-\> ]]
-}
-
-curr_epoch(){
-	local opt="-u ${1:-${moniker}}"
-	local epoch=`${solana} ${opt} epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
-	echo ${epoch}
-}
-
+# BEGIN bind
 ufw_purge_unbound(){
 	local bindip=${1:-${ssh_host}}
 	get_pkg ufw
@@ -1076,63 +1149,9 @@ bind(){
 	save_conf 'ssh_host' "${bindip}" && \
 	save_conf 'private_rpc' 0 && ok || error
 }
+# END bind
 
-get_pkg(){
-	[ $# -gt 0 ] || error ${err_arg}
-	for pkg in "$@"; do
-		if is_linux; then
-			apt info      ${pkg} &>/dev/null || error ${err_pkg_unsupported//PKG/${pkg}}
-			dpkg --verify ${pkg} &>/dev/null || sudo apt install ${pkg} -y &>/dev/null
-		elif is_macos; then
-			if ! which ${pkg} &>/dev/null; then
-				local blacklist='ufw'
-				[[ "${blacklist}" == *${pkg}* ]] && error ${err_pkg_unsupported_os//PKG/${pkg}}
-				which brew       &>/dev/null || sh -c "$(curl -fsSL ${url_homebrew})"
-				brew info ${pkg} &>/dev/null || error ${err_pkg_unsupported//PKG/${pkg}}
-				brew list ${pkg} &>/dev/null || brew install ${pkg} &>/dev/null
-			fi
-		else
-			error ${err_unsupported_os}
-		fi
-	done
-}
-
-get_wanip(){
-	local res; res=$(get_pkg wget) || log "${res}" # isolated
-	local cmd_wget="wget -4 -qO- --tries=1 --timeout=${rpc_conn_timeout} --read-timeout=${rpc_max_time}"
-	local dig_opt="-4 +short +timeout=${rpc_conn_timeout} +tries=1 +retry=0"
-	is_linux || dig_opt=${dig_opt//timeout/time}
-	local started=`date +%s` ip
-	for i in `seq 1 ${rpc_retry}`; do
-		ip=`dig @resolver1.opendns.com myip.opendns.com ${dig_opt} 2>/dev/null` || ip=
-		if ! is_ip ${ip}; then
-			ip=`dig @ns1.google.com o-o.myaddr.1.google.com TXT ${dig_opt} 2>/dev/null` || ip=
-			ip=`echo ${ip} | tr -d '"'`
-		fi
-		if ! is_ip ${ip}; then ip=`${cmd_wget} http://ifconfig.me/ip`; fi
-		if ! is_ip ${ip}; then ip=`${cmd_wget} http://ipinfo.io/ip`; fi
-		if ! is_ip ${ip}; then ip=`${cmd_wget} http://icanhazip.com`; fi
-		is_ip ${ip} && break
-		local elapsed=$(($(date +%s)-$started))
-		if (($elapsed >= ${rpc_retry_max_time})); then
-			log "${err_timeout//TIME/$(elapsed ${rpc_retry_max_time})}"
-			break
-		fi
-		sleep ${rpc_retry_delay}
-	done
-	is_ip ${ip} && echo ${ip}
-}
-
-is_virt(){
-	is_linux || { warn ${err_unsupported_os}; return 1; }
-	get_pkg virt-what
-	local facts; facts=`sudo virt-what`
-	local status=$?
-	[ ${status} -ne 0 ] && error "${status}"
-	# return 0 if VM detected, 1 otherwise
-	[ -n "${facts}" ]
-}
-
+# BEGIN json-rpc
 file_fetch(){
 	local url=$1
 	local out=${2:-$(basename ${url%%\?*})} # strip query when naming
@@ -1224,176 +1243,9 @@ json_rpc(){
 		error ${err_rpc_connect}
 	fi
 }
+# END json-rpc
 
-# functions: reporting
-leader_slot(){
-	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
-	get_pkg bc
-	local pub=`${keygen} pubkey ${staked}`
-	echo -e "${LN}${msg_slot_leader}${NC}"
-	while true; do
-		local slots=`tail -n10000 ${log} 2>/dev/null | awk -v pattern="${pub}.+within slot" '$0 ~ pattern {printf "%d\n", $18-$12}' | tail -1`
-		[[ "${slots}" -lt 0 ]] && slots=0
-		local S=`bc <<< "${slots}*0.5" 2>/dev/null`
-		local H=`bc <<< "$S/3600" 2>/dev/null`
-		local M=`bc <<< "$S/60-$H*60" 2>/dev/null`
-		S=`bc <<< "$S-$H*3600-$M*60" 2>/dev/null`
-		printf '   %d hr %.0f min %.0f sec   \r' $H $M $S
-		if [ -n "${oneshot}" ]; then
-			printf '\n'
-			break
-		fi
-	done
-}
-
-optimistic_slot(){
-	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
-	echo -e "${LN}${msg_slot_optimistic}${NC}"
-	while true; do
-		local slot=`cat ${log} | grep 'optimistic_slot slot=' | tail -n1000 | cut -d'=' -f2 | tr -d i | sort -n | tail -n1`
-		printf '   %d\r' "${slot}"
-		if [ -n "${oneshot}" ]; then
-			printf '\n'
-			break
-		fi
-	done
-}
-
-# TODO: setup a crontab to pull slot data from the RPC and store it in the DB.
-# This function should only retrieve and display this stored data from the DB.
-# Ex: pull_slots(){...}
-# slots.db: slot, epoch, timestamp, rewards, skipped=Y/N
-strip0(){ echo $1 | sed '/\./ s/\.\{0,1\}0\{1,\}$//'; }
-slots(){
-	local pub=`${keygen} pubkey ${keypair}`
-	local epoch=$1
-	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
-	
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}"
-	
-	# https://stackoverflow.com/a/58617630
-	durationToSeconds(){
-		set -f
-		normalize(){ echo $1 | tr '[:upper:]' '[:lower:]' | tr -d "\"\\\'" | sed 's/years\{0,1\}/y/g; s/months\{0,1\}/m/g; s/days\{0,1\}/d/g; s/hours\{0,1\}/h/g; s/minutes\{0,1\}/m/g; s/min/m/g; s/seconds\{0,1\}/s/g; s/sec/s/g;  s/ //g;'; }
-		local value=$(normalize "$1")
-		local fallback=$(normalize "$2")
-		echo $value | grep -v '^[-+*/0-9ydhms]\{0,30\}$' >/dev/null 2>&1
-		if [ $? -eq 0 ]; then
-			>&2 echo Invalid duration pattern \"$value\"
-		elif [ "$value" = "" ]; then
-			[ "$fallback" != "" ] && durationToSeconds "$fallback"
-		else
-			sedtmpl(){ echo "s/\([0-9]\+\)$1/(0\1 * $2)/g;"; }
-			local template="$(sedtmpl '\( \|$\)' 1) $(sedtmpl y '365 * 86400') $(sedtmpl d 86400) $(sedtmpl h 3600) $(sedtmpl m 60) $(sedtmpl s 1) s/) *(/) + (/g;"
-			echo $value | sed "$template" | bc
-		fi
-		set +f
-	}
-	
-	slot_time(){
-		local slot=$1
-		local diff=`echo "${slot}-${curr_slot}" | bc`
-		local delta=`echo "(${slot_len}*${diff})/1" | bc`
-		echo `echo "${now}+${delta}" | bc`
-	}
-	
-	slot_date(){
-		local sec=$(slot_time "$@")
-		echo `date +"%F %T" -d @${sec}`
-	}
-	
-	is_curr_epoch(){ [ -z "${epoch}" -o "${epoch}" == "${curr_epoch}" ]; }
-	
-	local now=`date +%s`
-	local balance=`${solana} ${opt} balance ${pub}`
-	local avskip=`${solana} ${opt} validators | grep -i 'Average Stake-Weighted Skip Rate' | awk '{print $5}'`
-	local epoch_info=`${solana} ${opt} epoch-info`
-	if [ -n "${epoch_info}" ]; then
-		local curr_epoch=`echo -e "${epoch_info}" | grep -i 'Epoch:' | awk '{print $2}'`
-		local epoch_rate=`echo -e "${epoch_info}" | grep -i 'Epoch Completed Percent' | awk '{print $4}' | sed 's/[^0-9.]*//g' | xargs printf '%.2f'`
-		local duration=`echo -e "${epoch_info}" | grep -i 'Completed Time' | cut -d '/' -f 2 | cut -d '(' -f 1`
-		local epoch_len=$(durationToSeconds "${duration}")
-		local duration=`echo -e "${epoch_info}" | grep -i 'Completed Time' | cut -d '(' -f 2 | cut -d ')' -f 1 | sed 's/remaining//g'`
-		local epoch_rem=$(durationToSeconds "${duration}")
-		local first_slot=`echo -e "${epoch_info}" | grep -i 'Epoch Slot Range: ' | cut -d '[' -f 2 | cut -d '.' -f 1`
-		local last_slot=`echo -e "${epoch_info}" | grep -i 'Epoch Slot Range: ' | cut -d '[' -f 2 | cut -d '.' -f 3 | cut -d ')' -f 1`
-		local curr_slot=`echo -e "${epoch_info}" | grep -i 'Slot: ' | cut -d ':' -f 2 | cut -d ' ' -f 2`
-		local slot_len=`echo "scale=10; ${epoch_len}/(${last_slot}-${first_slot})" | bc`
-		local slot_speed=`echo "scale=1; 1.0/${slot_len}" | bc` # slots/sec
-		local schedule=`${solana} ${opt} leader-schedule ${epoch_opt} | grep ${pub}`
-		if [ -n "${schedule}" ]; then
-			local next_slot=`echo -e "${schedule}" | awk '{print $1}' | sort -n | awk -v cs="${curr_slot}" '$1 > cs {print $1; exit}'`
-			local scheduled=`echo -e "${schedule}" | wc -l`
-			local completed=`echo -e "${schedule}" | awk -v cs="${curr_slot}" '{ if ($1 <= cs) { print }}' | wc -l`
-			local remaining=`echo -e "${schedule}" | awk -v cs="${curr_slot}" '{ if ($1 > cs) { print }}' | wc -l`
-			[ -n "${next_slot}" ] && local slot_time=`echo "$(slot_time ${next_slot})-${now}" | bc`
-			# Error: Ledger data not available for slots A to B (minimum ledger slot is C)
-			local slots=`${solana} ${opt} block-production ${epoch_opt} -v | grep ${pub}`
-			if [ -n "${slots}" ]; then
-				local skipped_slots=`echo -e "${slots}" | grep -i SKIPPED`
-				local skipped=`echo -e "${slots}" | head -n1 | awk '{print $4}'`
-				local skip_rate=`echo -e "${slots}" | head -n1 | awk '{print $5}'`
-				local produced=$((${completed:-0}-${skipped:-0}))
-			fi
-		fi
-	fi
-	
-	local rewards=0
-	echo -e "${LN}Leader schedule for epoch: ${epoch:-${curr_epoch}}${NC}"
-	echo -e "${LN}Slot #    Timestamp           Rewards SOL${NC}"
-	if [ -n "${first_slot}" ] && is_curr_epoch; then
-		echo -e "${CC}${first_slot} $(slot_date ${first_slot}) Epoch start${NC}"
-	fi
-	if [ -n "${schedule}" -a -z "${quiet}" ]; then
-		while read in; do
-			local slot=${in:-0}
-			if (( ${slot} <= ${curr_slot:-0} )); then
-				if echo "${skipped_slots}" | grep -q ${slot}; then
-					echo -e "${CR}${slot} $(slot_date ${slot}) $(printf '%.9f') ${LR}X${NC}"
-				else
-					echo -e -n "${CG}${slot} $(slot_date ${slot})${NC} "
-					# the local RPC needs --enable-rpc-transaction-history for `block`
-					if json_fetch "block ${slot}" ${rpc_url} -1; then
-						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pub "${pub}" '[.rewards[] | select(.pubkey==$pub) | .lamports] | add'`
-						local amount=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
-						rewards=`echo "scale=9; ${rewards}+${amount}" | bc | xargs printf '%.9f'`
-						echo "${CG}${amount}${NC}"
-					fi
-				fi
-			else
-				echo -e "${slot} $(slot_date ${slot})"
-			fi
-		done < <(echo "${schedule}" | sed 's/|/ /' | awk '{print $1}')
-	fi
-	if [ -n "${last_slot}" ] && is_curr_epoch; then
-		echo -e "${CC}${last_slot} $(slot_date ${last_slot}) Epoch end${NC}"
-	fi
-#	echo -e "${LN}                       Total: ${rewards:-$(printf '%.9f')}${NC}"
-	echo
-	echo -e "${LN} Packages:${NC} ${BACKTITLE:-n/a}"
-	echo -e "${LN} Identity:${NC} ${pub:-n/a}"
-	echo -e "${LN}  Balance:${NC} ${balance:-n/a}"
-	echo -e "${LN}  Rewards:${NC} ${rewards:-$(printf '%.9f')} SOL"
-	echo -e "${LN}    Epoch:${NC} ${curr_epoch:-n/a} (${epoch_rate:-0}% completed, $(elapsed ${epoch_rem:-0}) left)"
-	echo -e "${LN}    Speed:${NC} ${slot_speed:-n/a} slots/sec"
-	echo -e "${LN}    Slots:${NC} ${scheduled:-0}/${completed:-0}/${produced:-0} (${skipped:-0} skipped, ${remaining:-0} remaining)"
-	echo -e "${LN}Next Slot:${NC} ${next_slot:-n/a} ($(elapsed ${slot_time:-0}))"
-	echo -e "${LN}Skip Rate:${NC} ${skip_rate:-0%} (${avskip:-n/a} average)"
-	echo
-}
-
-stakes(){
-	# the local RPC needs account indexing of the stake program, i.e:
-	# --account-index program-id
-	# --account-index-include-key Stake11111111111111111111111111111111111111
-	
-	# get stakes either from the cached JSON or via an RPC call
-	json_fetch "stakes ${vote_acc}" ${rpc_url} ||:
-	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && ok
-}
-
-# functions: menu
+# BEGIN menu
 memsize(){
 	if is_linux; then
 		get_pkg dmidecode
@@ -1768,90 +1620,9 @@ menu_version(){
 	# return 0 if version provided, 1 otherwise
 	[ -n "$REPLY" ] && echo "$REPLY"
 }
+# END menu
 
-# functions: snapshot
-check_snapshot(){
-	local max_age=${1:-${snapshots_age}}
-	local status=1 str=${msg_snap_missing}
-	local d; [ -z "${no_incremental_snapshots}" ] && d=${snapshots_inc} || d=${snapshots}
-	local f=`find ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
-	if [ -f "${f}" ]; then
-		local mtime=`${cmd_mtime} ${f}`
-		local mdiff=$(($(date +%s)-$mtime))
-		local ttl=`echo "scale=1; ${max_age}/${tower_slot_speed}" | bc`
-		ttl=$(ceil ${ttl}) # rounded up
-		if (( $mdiff <= ${ttl} )); then
-			status=0
-			local str=${msg_snap_ok}
-		else
-			local str=${msg_snap_outdated}
-		fi
-	fi
-	str=${str//TTL/${ttl}}
-	echo ${str//TIME/$(elapsed $mdiff)}
-	return ${status}
-}
-
-make_snapshot(){
-	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
-	[ $# -gt 0 ] || error ${err_arg} ${tip_help}
-	local slot=$1; shift
-	
-	# below is a bug fix for the ledger-tool opening the default 'level'
-	# blockstore while the FIFO compaction flag is set in the config file
-	# Error: snapshot slot N does not exist in blockstore or is not full.
-	# (occured due to 'Shred storage type cannot be inferred for ledger')
-	if [ "${rocksdb_shred}" == 'fifo' ]; then
-		rocksdb=`du -s ${ledger}/rocksdb 2>/dev/null`
-		rocksdb_fifo=`du -s ${ledger}/rocksdb_fifo 2>/dev/null`
-		if [ "${rocksdb_fifo}" -gt "${rocksdb}" ]; then
-			# delete the default 'level' blockstore
-			sudo rm -rf ${ledger}/rocksdb
-		fi
-	fi
-	
-	# add args from the systemd unit file
-	local args=()
-	[ -n "${accounts}" ]       && args+=("--accounts ${accounts}")
-	[ -n "${accounts_index}" ] && args+=("--accounts-index-path ${accounts_index}")
-	[ -n "${snapshots}" ]      && args+=("--snapshots ${snapshots}")
-	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
-	
-	# run the snapshot tool
-	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") --hard-fork ${slot} "$@" -- ${slot} && ok
-}
-
-pid_lock(){
-	LOG=y
-	while [ -f "$1" ] && kill -0 $(<$1) &>/dev/null; do # ex: ps -p $$
-		if [ "${2:-0}" == 0 ]; then
-			error ${err_pid_exists//FILE/$1}
-		elif (( $SECONDS >= ${2:-0} )); then
-			local str=${err_pid_lock//FILE/$1}
-			error ${str//TIME/$(elapsed ${2:-0})}
-		fi
-		sleep 1
-	done
-	
-	# make sure the lock file is removed on exit
-	local str=`trap -p EXIT`
-	[ -z "${str}" ] && trap "pid_unlock $1" EXIT
-	
-	# create a lock file
-	echo -n $$ | ${sudo} tee $1 >/dev/null || error ${err_pid_write//FILE/$1}
-	SECONDS=0
-	unset LOG
-}
-pid_unlock(){ ${sudo} rm -f $1; }
-
-remount(){
-	[ -z "$1" ] && return 0
-	local d=`echo "$1" | cut -d/ -f 1-3` # /path/to
-	if grep -q "${d}" /etc/fstab 2>/dev/null; then
-		grep -q "${d}" /proc/mounts 2>/dev/null || sudo mount "${d}"
-	fi
-}
-
+# BEGIN logging
 rotate(){
 	[ -f "$1" ] || return 0
 	local mdate=`date +'%Y-%m-%d' -d @$(${cmd_mtime} $1)`
@@ -1902,7 +1673,9 @@ EOF"
 	mklog $1
 	sudo systemctl restart logrotate && ok || error
 }
+# END logging
 
+# BEGIN start/stop/restart
 is_running(){ is_linux && ${cmd_status} &>/dev/null; }
 wait4e(){
 	[ -n "$1" ] || return 0
@@ -2032,7 +1805,9 @@ restart(){
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r && stopper && ${cmd_move} && ${cmd_link} && ${cmd_clean} && ${cmd_reboot} && starter && ok
 }
+# END start/stop/restart
 
+# BEGIN update
 update(){
 	# is_linux || { warn ${err_unsupported_os}; return; }
 	
@@ -2174,8 +1949,9 @@ update(){
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 }
+# END update
 
-# functions: firedancer
+# BEGIN firedancer
 fd_enabled(){ is_tag $TAG_FD; }
 fd_monitor(){
 	fd_enabled || error ${msg_pkg_disabled//PKG/fd}
@@ -2268,8 +2044,9 @@ fd_sanitize(){
 		echo ${*}
 	fi
 }
+# END firedancer
 
-# functions: jito-solana
+# BEGIN jito-solana
 jito_enabled(){ is_tag $TAG jito; }
 jito_reload(){
 	jito_enabled || error ${err_version}
@@ -2279,8 +2056,9 @@ jito_reload(){
 	${cmd_exec} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
 	ok ${msg_pkg_configured//PKG/jito}
 }
+# END jito-solana
 
-# functions: jito-relayer
+# BEGIN jito-relayer
 relayer_running(){ is_linux && ${cmd_relayer_status} &>/dev/null; }
 relayer_enabled(){ jito_enabled && is_tag $RELAYER_TAG; }
 relayer_required(){ relayer_enabled && [[ "${relayer_url}" == *'127.0.0.1'* ]]; }
@@ -2382,8 +2160,9 @@ update_relayer(){
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && relayer_running && restart_relayer || :
 }
+# END jito-relayer
 
-# functions: doublezero
+# BEGIN doublezero
 dz_enabled(){ [ "${dz_enabled}" == 1 ]; }
 dz_init(){
 	is_staked || error ${err_unstaked}
@@ -2419,6 +2198,9 @@ pda_fetch(){
 pda_fund(){
 	LOG=y
 	
+	# set SMS settings
+	SENDER=$(mkalias $(${keygen} pubkey ${unstaked}))
+	
 	local opt="-u ${moniker} -k ${staked}"
 	local pub=`${keygen} pubkey ${staked}`
 	local arg resp str
@@ -2434,7 +2216,7 @@ pda_fund(){
 	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
 		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
 		quiet=1; resp=$(pda_fetch) || error "${resp}"
-		info "funded=${1:-0},pda=${resp}"
+		SMS=y; info "funded=${1:-0},pda=${resp}"; unset SMS
 	else
 		info ${msg_aborted}
 	fi
@@ -2560,8 +2342,9 @@ dz(){
 		[ -z "$1" ] && ${dz} status || error ${err_arg};;
 	esac
 }
+# END doublezero
 
-# functions: setup
+# BEGIN setup
 setup(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	LOG=y
@@ -2916,8 +2699,273 @@ setup(){
 	local elapsed=$(($(date +%s)-$started))
 	log "${msg_log_stop//TIME/$(elapsed $elapsed)}" && ok
 }
+# END setup
 
-# functions: watchdog
+# BEGIN snapshot
+check_snapshot(){
+	local max_age=${1:-${snapshots_age}}
+	local status=1 str=${msg_snap_missing}
+	local d; [ -z "${no_incremental_snapshots}" ] && d=${snapshots_inc} || d=${snapshots}
+	local f=`find ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
+	if [ -f "${f}" ]; then
+		local mtime=`${cmd_mtime} ${f}`
+		local mdiff=$(($(date +%s)-$mtime))
+		local ttl=`echo "scale=1; ${max_age}/${tower_slot_speed}" | bc`
+		ttl=$(ceil ${ttl}) # rounded up
+		if (( $mdiff <= ${ttl} )); then
+			status=0
+			local str=${msg_snap_ok}
+		else
+			local str=${msg_snap_outdated}
+		fi
+	fi
+	str=${str//TTL/${ttl}}
+	echo ${str//TIME/$(elapsed $mdiff)}
+	return ${status}
+}
+
+make_snapshot(){
+	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
+	[ $# -gt 0 ] || error ${err_arg} ${tip_help}
+	local slot=$1; shift
+	
+	# below is a bug fix for the ledger-tool opening the default 'level'
+	# blockstore while the FIFO compaction flag is set in the config file
+	# Error: snapshot slot N does not exist in blockstore or is not full.
+	# (occured due to 'Shred storage type cannot be inferred for ledger')
+	if [ "${rocksdb_shred}" == 'fifo' ]; then
+		rocksdb=`du -s ${ledger}/rocksdb 2>/dev/null`
+		rocksdb_fifo=`du -s ${ledger}/rocksdb_fifo 2>/dev/null`
+		if [ "${rocksdb_fifo}" -gt "${rocksdb}" ]; then
+			# delete the default 'level' blockstore
+			sudo rm -rf ${ledger}/rocksdb
+		fi
+	fi
+	
+	# add args from the systemd unit file
+	local args=()
+	[ -n "${accounts}" ]       && args+=("--accounts ${accounts}")
+	[ -n "${accounts_index}" ] && args+=("--accounts-index-path ${accounts_index}")
+	[ -n "${snapshots}" ]      && args+=("--snapshots ${snapshots}")
+	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
+	
+	# run the snapshot tool
+	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") --hard-fork ${slot} "$@" -- ${slot} && ok
+}
+# END snapshot
+
+# BEGIN stats
+leader_slot(){
+	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
+	get_pkg bc
+	local pub=`${keygen} pubkey ${staked}`
+	echo -e "${LN}${msg_slot_leader}${NC}"
+	while true; do
+		local slots=`tail -n10000 ${log} 2>/dev/null | awk -v pattern="${pub}.+within slot" '$0 ~ pattern {printf "%d\n", $18-$12}' | tail -1`
+		[[ "${slots}" -lt 0 ]] && slots=0
+		local S=`bc <<< "${slots}*0.5" 2>/dev/null`
+		local H=`bc <<< "$S/3600" 2>/dev/null`
+		local M=`bc <<< "$S/60-$H*60" 2>/dev/null`
+		S=`bc <<< "$S-$H*3600-$M*60" 2>/dev/null`
+		printf '   %d hr %.0f min %.0f sec   \r' $H $M $S
+		if [ -n "${oneshot}" ]; then
+			printf '\n'
+			break
+		fi
+	done
+}
+
+optimistic_slot(){
+	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
+	echo -e "${LN}${msg_slot_optimistic}${NC}"
+	while true; do
+		local slot=`cat ${log} | grep 'optimistic_slot slot=' | tail -n1000 | cut -d'=' -f2 | tr -d i | sort -n | tail -n1`
+		printf '   %d\r' "${slot}"
+		if [ -n "${oneshot}" ]; then
+			printf '\n'
+			break
+		fi
+	done
+}
+
+# TODO: setup a crontab to pull slot data from the RPC and store it in the DB.
+# This function should only retrieve and display this stored data from the DB.
+# Ex: pull_slots(){...}
+# slots.db: slot, epoch, timestamp, rewards, skipped=Y/N
+strip0(){ echo $1 | sed '/\./ s/\.\{0,1\}0\{1,\}$//'; }
+slots(){
+	local pub=`${keygen} pubkey ${keypair}`
+	local epoch=$1
+	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
+	
+	is_dryrun || local u=localhost
+	local opt="-u ${u:-${rpc_url}}"
+	
+	# https://stackoverflow.com/a/58617630
+	durationToSeconds(){
+		set -f
+		normalize(){ echo $1 | tr '[:upper:]' '[:lower:]' | tr -d "\"\\\'" | sed 's/years\{0,1\}/y/g; s/months\{0,1\}/m/g; s/days\{0,1\}/d/g; s/hours\{0,1\}/h/g; s/minutes\{0,1\}/m/g; s/min/m/g; s/seconds\{0,1\}/s/g; s/sec/s/g;  s/ //g;'; }
+		local value=$(normalize "$1")
+		local fallback=$(normalize "$2")
+		echo $value | grep -v '^[-+*/0-9ydhms]\{0,30\}$' >/dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			>&2 echo Invalid duration pattern \"$value\"
+		elif [ "$value" = "" ]; then
+			[ "$fallback" != "" ] && durationToSeconds "$fallback"
+		else
+			sedtmpl(){ echo "s/\([0-9]\+\)$1/(0\1 * $2)/g;"; }
+			local template="$(sedtmpl '\( \|$\)' 1) $(sedtmpl y '365 * 86400') $(sedtmpl d 86400) $(sedtmpl h 3600) $(sedtmpl m 60) $(sedtmpl s 1) s/) *(/) + (/g;"
+			echo $value | sed "$template" | bc
+		fi
+		set +f
+	}
+	
+	slot_time(){
+		local slot=$1
+		local diff=`echo "${slot}-${curr_slot}" | bc`
+		local delta=`echo "(${slot_len}*${diff})/1" | bc`
+		echo `echo "${now}+${delta}" | bc`
+	}
+	
+	slot_date(){
+		local sec=$(slot_time "$@")
+		echo `date +"%F %T" -d @${sec}`
+	}
+	
+	is_curr_epoch(){ [ -z "${epoch}" -o "${epoch}" == "${curr_epoch}" ]; }
+	
+	local now=`date +%s`
+	local balance=`${solana} ${opt} balance ${pub}`
+	local avskip=`${solana} ${opt} validators | grep -i 'Average Stake-Weighted Skip Rate' | awk '{print $5}'`
+	local epoch_info=`${solana} ${opt} epoch-info`
+	if [ -n "${epoch_info}" ]; then
+		local curr_epoch=`echo -e "${epoch_info}" | grep -i 'Epoch:' | awk '{print $2}'`
+		local epoch_rate=`echo -e "${epoch_info}" | grep -i 'Epoch Completed Percent' | awk '{print $4}' | sed 's/[^0-9.]*//g' | xargs printf '%.2f'`
+		local duration=`echo -e "${epoch_info}" | grep -i 'Completed Time' | cut -d '/' -f 2 | cut -d '(' -f 1`
+		local epoch_len=$(durationToSeconds "${duration}")
+		local duration=`echo -e "${epoch_info}" | grep -i 'Completed Time' | cut -d '(' -f 2 | cut -d ')' -f 1 | sed 's/remaining//g'`
+		local epoch_rem=$(durationToSeconds "${duration}")
+		local first_slot=`echo -e "${epoch_info}" | grep -i 'Epoch Slot Range: ' | cut -d '[' -f 2 | cut -d '.' -f 1`
+		local last_slot=`echo -e "${epoch_info}" | grep -i 'Epoch Slot Range: ' | cut -d '[' -f 2 | cut -d '.' -f 3 | cut -d ')' -f 1`
+		local curr_slot=`echo -e "${epoch_info}" | grep -i 'Slot: ' | cut -d ':' -f 2 | cut -d ' ' -f 2`
+		local slot_len=`echo "scale=10; ${epoch_len}/(${last_slot}-${first_slot})" | bc`
+		local slot_speed=`echo "scale=1; 1.0/${slot_len}" | bc` # slots/sec
+		local schedule=`${solana} ${opt} leader-schedule ${epoch_opt} | grep ${pub}`
+		if [ -n "${schedule}" ]; then
+			local next_slot=`echo -e "${schedule}" | awk '{print $1}' | sort -n | awk -v cs="${curr_slot}" '$1 > cs {print $1; exit}'`
+			local scheduled=`echo -e "${schedule}" | wc -l`
+			local completed=`echo -e "${schedule}" | awk -v cs="${curr_slot}" '{ if ($1 <= cs) { print }}' | wc -l`
+			local remaining=`echo -e "${schedule}" | awk -v cs="${curr_slot}" '{ if ($1 > cs) { print }}' | wc -l`
+			[ -n "${next_slot}" ] && local slot_time=`echo "$(slot_time ${next_slot})-${now}" | bc`
+			# Error: Ledger data not available for slots A to B (minimum ledger slot is C)
+			local slots=`${solana} ${opt} block-production ${epoch_opt} -v | grep ${pub}`
+			if [ -n "${slots}" ]; then
+				local skipped_slots=`echo -e "${slots}" | grep -i SKIPPED`
+				local skipped=`echo -e "${slots}" | head -n1 | awk '{print $4}'`
+				local skip_rate=`echo -e "${slots}" | head -n1 | awk '{print $5}'`
+				local produced=$((${completed:-0}-${skipped:-0}))
+			fi
+		fi
+	fi
+	
+	local rewards=0
+	echo -e "${LN}Leader schedule for epoch: ${epoch:-${curr_epoch}}${NC}"
+	echo -e "${LN}Slot #    Timestamp           Rewards SOL${NC}"
+	if [ -n "${first_slot}" ] && is_curr_epoch; then
+		echo -e "${CC}${first_slot} $(slot_date ${first_slot}) Epoch start${NC}"
+	fi
+	if [ -n "${schedule}" -a -z "${quiet}" ]; then
+		while read in; do
+			local slot=${in:-0}
+			if (( ${slot} <= ${curr_slot:-0} )); then
+				if echo "${skipped_slots}" | grep -q ${slot}; then
+					echo -e "${CR}${slot} $(slot_date ${slot}) $(printf '%.9f') ${LR}X${NC}"
+				else
+					echo -e -n "${CG}${slot} $(slot_date ${slot})${NC} "
+					# the local RPC needs --enable-rpc-transaction-history for `block`
+					if json_fetch "block ${slot}" ${rpc_url} -1; then
+						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pub "${pub}" '[.rewards[] | select(.pubkey==$pub) | .lamports] | add'`
+						local amount=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
+						rewards=`echo "scale=9; ${rewards}+${amount}" | bc | xargs printf '%.9f'`
+						echo "${CG}${amount}${NC}"
+					fi
+				fi
+			else
+				echo -e "${slot} $(slot_date ${slot})"
+			fi
+		done < <(echo "${schedule}" | sed 's/|/ /' | awk '{print $1}')
+	fi
+	if [ -n "${last_slot}" ] && is_curr_epoch; then
+		echo -e "${CC}${last_slot} $(slot_date ${last_slot}) Epoch end${NC}"
+	fi
+#	echo -e "${LN}                       Total: ${rewards:-$(printf '%.9f')}${NC}"
+	echo
+	echo -e "${LN} Packages:${NC} ${BACKTITLE:-n/a}"
+	echo -e "${LN} Identity:${NC} ${pub:-n/a}"
+	echo -e "${LN}  Balance:${NC} ${balance:-n/a}"
+	echo -e "${LN}  Rewards:${NC} ${rewards:-$(printf '%.9f')} SOL"
+	echo -e "${LN}    Epoch:${NC} ${curr_epoch:-n/a} (${epoch_rate:-0}% completed, $(elapsed ${epoch_rem:-0}) left)"
+	echo -e "${LN}    Speed:${NC} ${slot_speed:-n/a} slots/sec"
+	echo -e "${LN}    Slots:${NC} ${scheduled:-0}/${completed:-0}/${produced:-0} (${skipped:-0} skipped, ${remaining:-0} remaining)"
+	echo -e "${LN}Next Slot:${NC} ${next_slot:-n/a} ($(elapsed ${slot_time:-0}))"
+	echo -e "${LN}Skip Rate:${NC} ${skip_rate:-0%} (${avskip:-n/a} average)"
+	echo
+}
+
+stakes(){
+	# the local RPC needs account indexing of the stake program, i.e:
+	# --account-index program-id
+	# --account-index-include-key Stake11111111111111111111111111111111111111
+	
+	# get stakes either from the cached JSON or via an RPC call
+	json_fetch "stakes ${vote_acc}" ${rpc_url} ||:
+	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && ok
+}
+# END stats
+
+# BEGIN unswap
+unswap(){
+	is_linux || error ${err_unsupported_os}
+	
+	local res=`free`
+	local mem=`echo "${res}"   | grep -i 'Mem:'`
+	local swap=`echo "${res}"  | grep -i 'Swap:'`
+	local used=`echo "${swap}" | awk '{printf "%lu", $3}'`
+	local free=`echo "${mem}"  | awk '{printf "%lu", $4}'`
+	local cache=`echo "${mem}" | awk '{printf "%lu", $6}'`
+	local avail=`echo "${mem}" | awk '{printf "%lu", $7}'`
+	local total=$((${free}+${cache}+${avail}))
+	
+	echo -e "Free mem:\t$((${total}/1024/1024)) GB"
+	echo -e "Used swap:\t$((${used}/1024/1024)) GB"
+	
+	if [ "${used}" -eq 0 ]; then
+		warn "No swap is in use"
+	elif [ "${used}" -lt "${total}" ]; then
+		local str="Freeing swap (this could take a while)"
+		is_dryrun && str+=" ${tip_dryrun}"
+		info ${str}
+		if ! is_dryrun; then
+			sudo swapoff -a
+			sudo swapon -a
+		fi
+		ok
+	else
+		error "Not enough memory"
+	fi
+}
+# END unswap
+
+# BEGIN usage
+usage(){
+	local arr=("${log%/*}") d
+	for d in "${dirs[@]}"; do arr+=("${!d}"); done
+	arr=(`printf '%s\n' "${arr[@]}" | sort`)
+	du -hs $(implode ' ' "${arr[@]}") 2>/dev/null
+}
+# END usage
+
+# BEGIN watchdog
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	[ -n "${ssh_host}" ]   || error ${err_bind} # required to transfer the tower
@@ -3159,7 +3207,6 @@ watchdog(){
 	[ -s "${unstaked}" ]   || error ${err_file_read//FILE/${unstaked}}
 	
 	# set SMS settings
-	# return 1 if the configured version of the CLI is not installed
 	SENDER=$(mkalias $(${keygen} pubkey ${unstaked}))
 	
 	# get the latest failover state
@@ -3477,7 +3524,7 @@ watchdog(){
 			SMS=y
 		# 2f: no bind IP (monitoring only)
 		elif [ "${bindip}" == N ] || is_num ${bindip}; then
-			# `ssh_host` is configured
+			# `bindip` is set => `ssh_host` is configured
 			set_event $E_BINDIP
 			local alias=$(mkalias ${ssh_bind})
 			# reporting `behind` here is disabled, since it's now reported
@@ -3554,8 +3601,9 @@ watchdog(){
 	
 	unset LOG SMS
 }
+# END watchdog
 
-# functions: validator
+# BEGIN validator
 cpu_tuner(){
 	is_linux || { warn ${err_unsupported_os}; return; }
 	is_virt && { warn ${msg_vm_true}; return; }
@@ -3783,6 +3831,7 @@ validator(){
 		exec ${validator} "$@" $(implode ' ' "${args[@]}")
 	fi
 }
+# END validator
 
 # main
 [ -z "${action}" ] && action=help
