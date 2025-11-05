@@ -15,8 +15,13 @@
 pkg_name=solana-tools
 pkg_version=0.1.0
 
+# ternary operator: cond ? a : b
+__num(){ (( $1 )) && echo "$3" || echo "$5"; }
+__str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
+__fun(){ if $1; then echo "$3"; else echo "$5"; fi; }
+
 # script reporting
-is_num(){ [[ "$1" =~ ^[0-9]+$ ]]; }
+is_num(){ [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]]; }
 in_array(){
 	local v=${1-}; shift
 	local arr=($@)
@@ -250,6 +255,7 @@ read_conf(){
 	block=${path}/data/blocks/SLOT.json
 	stakes=${path}/data/stakes/EPOCH.json
 	validators=${path}/data/validators.json
+	dz_fees_csv=${path}/data/fees/EPOCH.csv
 	tower_delay=`echo "scale=1; ${tower_slot_delay}/${tower_slot_speed}" | bc | sed 's/^\./0./'`
 	tower_ttl=`echo "scale=1; ${tower_ttl_slots}/${tower_slot_speed}" | bc | sed 's/^\./0./'`
 	tower_ttl=$(ceil ${tower_ttl}) # rounded up
@@ -713,7 +719,7 @@ help(){
 	echo -e "        ${CG}bind${NC} [HOST] [PUBKEY]       Pair the remote validator for identity transition"
 	echo -e "        ${CG}check-snapshot${NC} [NUM_SLOTS] Check if snapshot is less than this many slots behind [default: ${snapshots_age}]"
 	echo -e "        ${CG}cpu-tuner${NC} [GOVERNOR]       Tune CPU settings for the given governor [default: $(get_gov)]"
-	echo -e "        ${CG}dz${NC} [SUBCOMMAND]            Run doublezero with any: up/down/pda/fund/init/setup/user etc"
+	echo -e "        ${CG}dz${NC} [SUBCOMMAND]            Run doublezero with any: up/down/pda/fees/fund/init/setup/user"
 	echo -e "        ${CG}export${NC} <bin|log|tower>     Export environment variables"
 	echo -e "        ${CG}jito-reload${NC}                Hot reload the Jito configuration"
 	echo -e "        ${CG}leader-slot${NC} [-1]           Show countdown to the next leader slot"
@@ -801,6 +807,12 @@ tx(){
 	[ -n "${resp}" -a -n "${conf}" ] || [ -z "${resp}" -a -n "${txid}" ]
 }
 
+assert_allowed(){
+	[ -n "$1" ] || return 0
+	local str=$(__fun is_staked ? staked : unstaked)
+	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
+}
+
 precheck(){
 	[ -z "${precheck}" ] && precheck=1 || return 0
 	
@@ -818,10 +830,7 @@ precheck(){
 	is_pub ${airdrop_from} || error ${err_airdrop_from}
 	
 	# verify `airdrop_allow`
-	if [ -n "${airdrop_allow}" ]; then
-		local str; is_staked && str=staked || str=unstaked
-		[ "${airdrop_allow}" == "${str}" ] || error ${err_not_allowed//CONSTR/${airdrop_allow}}
-	fi
+	assert_allowed ${airdrop_allow}
 	
 	# stop if `airdrop_to` >= `airdrop_max`
 	is_dryrun || local u=localhost
@@ -928,10 +937,7 @@ balance(){
 	[ -s "${balance_from}" ] || error ${err_file_read//FILE/${balance_from}}
 	
 	# verify `balance_allow`
-	if [ -n "${balance_allow}" ]; then
-		local str; is_staked && str=staked || str=unstaked
-		[ "${balance_allow}" == "${str}" ] || error ${err_not_allowed//CONSTR/${balance_allow}}
-	fi
+	assert_allowed ${balance_allow}
 	
 	LOG=y
 	is_dryrun || local u=localhost
@@ -981,6 +987,12 @@ cp_conf(){
 	
 	# return 0 if the file copied, 1 otherwise
 	[[ "$(sudo cp ${flags} ${f} ${2:-$1} 2>/dev/null)" =~ \-\> ]]
+}
+
+curr_epoch(){
+	local opt="-u ${1:-${moniker}}"
+	local epoch=`${solana} ${opt} epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
+	echo ${epoch}
 }
 
 ufw_purge_unbound(){
@@ -1116,36 +1128,72 @@ is_virt(){
 	[ -n "${facts}" ]
 }
 
-json_read(){
+file_fetch(){
+	local url=$1
+	local out=${2:-$(basename ${url%%\?*})} # strip query when naming
+	local ttl=${3:-${cache_ttl}}
+	local th_met=0
+	
+	if [ -f "${out}" -a "${ttl}" != -1 ]; then
+		local mtime=`${cmd_mtime} ${out}`
+		local mdiff=$(($(date +%s)-$mtime))
+		(( $mdiff > $ttl )) && th_met=1
+	fi
+	
+	if [ ! -f "${out}" -o "${th_met}" == 1 ]; then
+		local d=${out%/*} tmp=${out}.partial res
+		[ "${d}" == "${out}" -o -d "${d}" ] || ${sudo} mkdir -p ${d}
+		res=`${sudo} curl --connect-timeout ${rpc_conn_timeout} \
+			--continue-at - \
+			--fail \
+			--location \
+			--max-time ${rpc_max_time} \
+			--retry-connrefused \
+			--retry-delay ${rpc_retry_delay} \
+			--retry-max-time ${rpc_retry_max_time} \
+			--retry ${rpc_retry} \
+			-s --show-error \
+			--output "${tmp}" "${url}" 2>&1` || { warn "${res}"; return 1; }
+		${sudo} mv -f "${tmp}" "${out}" # file can be empty
+	fi
+}
+
+json_fetch(){
 	local command=${1%% *}
 	[[ "${command}" =~ ^[a-z]+(-[a-z]+)*$ ]] || error ${err_arg}
 	local opt="-u ${2:-${moniker}}"
-	local cache_ttl=${3:-${cache_ttl}}
+	local out=${!command}
+	local ttl=${3:-${cache_ttl}}
 	local th_met=0
 	
-	FILE=${!command} # make it global for reporting
 	case ${command} in
 	block)
 		local slot=0
 		[[ "$1" =~ [0-9]+ ]] && slot=${BASH_REMATCH[0]} || error ${err_arg}
-		FILE=${FILE//SLOT/${slot}};;
+		out=${out//SLOT/${slot}};;
 	stakes)
-		local epoch=`${solana} ${opt} epoch`
+		local epoch=$(curr_epoch $2)
 		is_num ${epoch} || error ${err_arg} # need more specific error here
-		FILE=${FILE//EPOCH/${epoch}};;
+		out=${out//EPOCH/${epoch}};;
 	esac
 	
-	if [ -f "$FILE" -a "${cache_ttl}" != -1 ]; then
-		local mtime=`${cmd_mtime} $FILE`
+	if [ -f "${out}" -a "${ttl}" != -1 ]; then
+		local mtime=`${cmd_mtime} ${out}`
 		local mdiff=$(($(date +%s)-$mtime))
-		(( $mdiff > $cache_ttl )) && th_met=1
+		(( $mdiff > $ttl )) && th_met=1
 	fi
 	
-	if [ ! -f "$FILE" -o "${th_met}" == 1 ]; then
-		local d=${FILE%/*}
-		[ -d "${d}" ] || ${sudo} mkdir -p ${d}
-		${solana} ${opt} $1 --output=json 2>/dev/null | ${sudo} tee $FILE.new >/dev/null
-		[ -s "$FILE.new" ] && ${sudo} mv -f $FILE{.new,}
+	if [ ! -f "${out}" -o "${th_met}" == 1 ]; then
+		local d=${out%/*} tmp=${out}.new
+		[ "${d}" == "${out}" -o -d "${d}" ] || ${sudo} mkdir -p ${d}
+		set -o pipefail
+		if ! ${solana} ${opt} $1 --output=json 2>/dev/null | ${sudo} tee ${tmp} >/dev/null; then
+			warn ${err_json_fetch//FILE/${out}}
+			return 1
+		elif [ -s "${tmp}" ]; then
+			${sudo} mv -f "${tmp}" "${out}" # non-empty file
+		fi
+		set +o pipefail
 	fi
 }
 
@@ -1155,10 +1203,13 @@ json_rpc(){
 	[ "${host}" == "${port}" ] && port=${rpc_port}
 	local data='{"jsonrpc":"2.0","id":1,"method":"METHOD"}'
 	local resp=`curl --connect-timeout ${rpc_conn_timeout} \
+		--fail \
+		--location \
 		--max-time ${rpc_max_time} \
-		--retry ${rpc_retry} \
+		--retry-connrefused \
 		--retry-delay ${rpc_retry_delay} \
 		--retry-max-time ${rpc_retry_max_time} \
+		--retry ${rpc_retry} \
 		-s -X POST -H "Content-Type: application/json" -d ${data//METHOD/${method}} http://${host}:${port}`
 	if [ -n "${resp}" ]; then
 		local res=`echo "${resp}" | jq -r .result`
@@ -1298,9 +1349,7 @@ slots(){
 				else
 					echo -e -n "${CG}${slot} $(slot_date ${slot})${NC} "
 					# the local RPC needs --enable-rpc-transaction-history for `block`
-					if ! json_read "block ${slot}" ${rpc_url} -1; then
-						warn ${err_json_read//FILE/$FILE}
-					else
+					if json_fetch "block ${slot}" ${rpc_url} -1; then
 						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pub "${pub}" '[.rewards[] | select(.pubkey==$pub) | .lamports] | add'`
 						local amount=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
 						rewards=`echo "scale=9; ${rewards}+${amount}" | bc | xargs printf '%.9f'`
@@ -1335,7 +1384,7 @@ stakes(){
 	# --account-index-include-key Stake11111111111111111111111111111111111111
 	
 	# get stakes either from the cached JSON or via an RPC call
-	json_read "stakes ${vote_acc}" ${rpc_url} || warn ${err_json_read//FILE/$FILE}
+	json_fetch "stakes ${vote_acc}" ${rpc_url} ||:
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && ok
 }
 
@@ -1653,24 +1702,26 @@ menu_version(){
 			version=$(tag2ver "$TAG_FD")
 		fi
 		
-		get_pkg jq
-		local max_stake=0 new_ver=${version} v
 		# get validators either from the cached JSON or via an RPC call
-		json_read 'validators' ${rpc_url} || warn ${err_json_read//FILE/$FILE}
-		local versions=(`cat ${validators} | jq '.stakeByVersion | to_entries[] | [.key] | @tsv' | grep -v unknown | sed -e 's/"//g' | sort -t. -k 1,1nr -k 2,2nr -k 3,3nr`)
-		for v in "${versions[@]}"; do
-			local active_stake=`cat ${validators} | jq ".stakeByVersion.\"${v}\".currentActiveStake"`
-			if [ "${active_stake}" -gt "${max_stake}" ]; then
-				max_stake=${active_stake}
-				new_ver=${v}
-			fi
-		done
-		for v in "${versions[@]}"; do
-			local best='   '; [ "${v}" == "${new_ver}" ] && best='=> '
-			local conf=;      [ "${v}" == "${version}" ] && conf=' (config)'
-			local n_validators=`cat ${validators} | jq ".stakeByVersion.\"${v}\".currentValidators"`
-			options+=(${v} "${best}v${v} - ${n_validators}${conf}")
-		done
+		if json_fetch 'validators' ${rpc_url}; then
+			get_pkg jq
+			local max_stake=0 max_stake_v=${version} v
+			local versions=(`cat ${validators} | jq '.stakeByVersion | to_entries[] | [.key] | @tsv' | grep -v unknown | sed -e 's/"//g' | sort -t. -k 1,1nr -k 2,2nr -k 3,3nr`)
+			for v in "${versions[@]}"; do
+				local active_stake=`cat ${validators} | jq ".stakeByVersion.\"${v}\".currentActiveStake"`
+				if [ "${active_stake}" -gt "${max_stake}" ]; then
+					max_stake=${active_stake}
+					max_stake_v=${v}
+				fi
+			done
+			for v in "${versions[@]}"; do
+				local best='   ' conf=
+				[ "${v}" == "${max_stake_v}" ] && best='=> '
+				[ "${v}" == "${version}"     ] && conf=' (config)'
+				local n_validators=`cat ${validators} | jq ".stakeByVersion.\"${v}\".currentValidators"`
+				options+=(${v} "${best}v${v} - ${n_validators}${conf}")
+			done
+		fi
 	fi
 	
 	if [ "${#options[@]}" -gt 0 ]; then
@@ -1685,7 +1736,7 @@ menu_version(){
 			--backtitle "$BACKTITLE" \
 			--title "${msg_version_update}" \
 			${notags} \
-			--default-item "${version:-${new_ver}}" \
+			--default-item "${version:-${max_stake_v}}" \
 			--menu "${menu}" \
 			${height} ${width} ${choice_height} \
 			"${options[@]}" \
@@ -1851,11 +1902,11 @@ is_running(){ is_linux && ${cmd_status} &>/dev/null; }
 wait4e(){
 	[ -n "$1" ] || return 0
 	
-	is_running && local u=localhost
-	local opt="-u ${u:-${rpc_url}}"
+	local u=localhost
+	is_running || u=${rpc_url}
 	
 	while true; do
-		local epoch=`${solana} ${opt} epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
+		local epoch=$(curr_epoch ${u})
 		local str=${msg_epoch_wait//CURR/${epoch:-0}}
 		info ${str//EPOCH/$1}
 		if [ "${epoch:-0}" == "$1" ]; then
@@ -2217,7 +2268,7 @@ fd_sanitize(){
 jito_enabled(){ is_tag $TAG jito; }
 jito_reload(){
 	jito_enabled || error ${err_version}
-	is_running   || error ${err_not_allowed//CONSTR/running}
+	is_running   || error ${err_not_allowed//COND/running}
 	${cmd_exec} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
 	${cmd_exec} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
 	${cmd_exec} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
@@ -2330,7 +2381,7 @@ update_relayer(){
 # functions: doublezero
 dz_enabled(){ [ "${dz_enabled}" == 1 ]; }
 dz_init(){
-	is_staked  || error ${err_unstaked}
+	is_staked || error ${err_unstaked}
 	
 	local opt="-u ${moniker} -k ${staked}"
 	local pub=`${keygen} pubkey ${staked}`
@@ -2353,11 +2404,13 @@ dz_init(){
 	${dz_solana} passport request-validator-access ${opt} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg} --signature ${sig} \
 		&& ok || err
 }
+
 dz_pda_fetch(){
 	local pub=`${keygen} pubkey ${staked}`
 	[ -n "${quiet}" ] && local arg='-b' || local arg=
 	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n ${pub} ${arg}
 }
+
 dz_pda_fund(){
 	LOG=y
 	local opt="-u ${moniker} -k ${staked}"
@@ -2366,12 +2419,52 @@ dz_pda_fund(){
 	[ `echo "${1:-0} >= 0.000000001" | bc -l` == 1 ] && arg="--fund ${1}"
 	resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
 	quiet=1; resp=$(dz_pda_fetch) || error "${resp}"
-	info "pda=${resp}"
+	info "funded=${1:-0},pda=${resp}"
 	unset LOG
 }
-dz_setup(){
-	is_linux || error ${err_unsupported_os}
+
+dz_pda_fees(){
+	# verify the cluster
+	[ "${moniker}" != 'mainnet-beta' ] && error ${err_unsupported_cluster}
 	
+	# verify `dz_fees_allow`
+	assert_allowed ${dz_fees_allow}
+	
+	LOG=y
+	
+	local u=localhost
+	is_running || u=${rpc_url}
+	local epoch=$(curr_epoch ${u})
+	is_num ${epoch} || error ${err_arg} # need more specific error here
+	[ "${epoch}" -gt 1 ] && epoch=$((${epoch}-1)) # look one epoch back
+	local url=${dz_fees//EPOCH/${epoch}}
+	local out=${dz_fees_csv//EPOCH/${epoch}}
+	
+	file_fetch ${url} ${out} -1 || return 1
+	local pub=`${keygen} pubkey ${staked}` pda
+	quiet=1; pda=$(dz_pda_fetch) || error "${pda}"
+	if ! is_num ${pda}; then
+		error ${err_arg_numeric//ARG/pda}
+	else
+		local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
+		local fees=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
+		local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
+		local funding=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
+		info "due=${fees},pda=${pda},debt=${debt},funding=${funding}"
+		if [ "${funding}" == Y ]; then
+			# interactive mode
+			read -p ${msg_dz_pda_fund_yn//AMOUNT/${debt}}
+			if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
+				dz_pda_fund ${debt}
+			else
+				info ${msg_aborted}
+			fi
+		fi
+	fi
+	unset LOG
+}
+
+dz_setup(){
 	# check if it's already installed
 	if [ -f "${dz}" ]; then
 		local str=${err_installed//PKG/doublezero}
@@ -2411,39 +2504,36 @@ dz_setup(){
 	
 	ok ${msg_pkg_installed//PKG/doublezero}
 }
+
 dz_user_list(){
 	local pub=`${dz} address`
 	${dz} user list | grep ${pub}
 }
+
 dz(){
+	is_dryrun || is_linux || error ${err_unsupported_os}
 	dz_enabled || error ${msg_pkg_disabled//PKG/doublezero}
 	
 	# process the subcommand
 	case "$1" in
 	address|balance|latency|status)
-		${dz} "$1"
-		return;;
+		${dz} "$1";;
 	up)
-		${dz} connect ibrl
-		return;;
+		${dz} connect ibrl;;
 	down)
-		${dz} disconnect
-		return;;
+		${dz} disconnect;;
 	pda)
-		dz_pda_fetch
-		return;;
+		dz_pda_fetch;;
+	fees)
+		dz_pda_fees;;
 	fund)
-		dz_pda_fund ${2:-}
-		return;;
+		dz_pda_fund ${2:-};;
 	init)
-		dz_init
-		return;;
+		dz_init;;
 	setup)
-		dz_setup
-		return;;
+		dz_setup;;
 	user)
-		dz_user_list
-		return;;
+		dz_user_list;;
 	*)
 		[ -z "$1" ] && ${dz} status || error ${err_arg};;
 	esac
@@ -3139,9 +3229,7 @@ watchdog(){
 			
 			# get validators either from the cached JSON or via an RPC call
 			# to an external RPC server - localhost can get false positives
-			if ! json_read 'validators' ${rpc_url} 30; then
-				warn ${err_json_read//FILE/$FILE}
-			else
+			if json_fetch 'validators' ${rpc_url} 30; then
 				local res; res=$(get_pkg jq) || warn ${res} # isolated
 				local pub=`${keygen} pubkey ${staked}`
 				local json_data=`cat ${validators} | jq '.validators[] | select(.identityPubkey == "'${pub}'")'`
