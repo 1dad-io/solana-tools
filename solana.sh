@@ -198,6 +198,11 @@ read_conf(){
 	airdrop_min=${airdrop_min:-1}
 	airdrop_max=${airdrop_max:-10}
 	
+	# doublezero
+	dz_enabled=${dz_enabled:-0}
+	dz_epoch_offset=${dz_epoch_offset:-1}
+	dz_epoch_progress=${dz_epoch_progress:-90}
+	
 	# logging
 	log_level=${log_level:-info}
 	log_limit=${log_limit:-10000}
@@ -2434,13 +2439,21 @@ dz_pda_fees(){
 	
 	local u=localhost
 	is_running || u=${rpc_url}
+	
+	# look `dz_epoch_offset` epochs back
+	local offset=${1:-${dz_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
-	[ "${epoch}" -gt 1 ] && epoch=$((${epoch}-1)) # look one epoch back
+	if [ "${epoch}" -gt "${offset}" ]; then
+		epoch=$((${epoch}-${offset}))
+	fi
+	
+	# fetch doublezero fees for `epoch`
 	local url=${dz_fees//EPOCH/${epoch}}
 	local out=${dz_fees_csv//EPOCH/${epoch}}
-	
 	file_fetch ${url} ${out} -1 || return 1
+	
+	# calc the amount due for payment
 	local pub=`${keygen} pubkey ${staked}` pda
 	quiet=1; pda=$(dz_pda_fetch) || error "${pda}"
 	if ! is_num ${pda}; then
@@ -2453,7 +2466,7 @@ dz_pda_fees(){
 		info "due=${fees},pda=${pda},debt=${debt},funding=${funding}"
 		if [ "${funding}" == Y ]; then
 			# interactive mode
-			read -p ${msg_dz_pda_fund_yn//AMOUNT/${debt}}
+			read -p "${msg_dz_pda_fund_yn//AMOUNT/${debt}}"
 			if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
 				dz_pda_fund ${debt}
 			else
@@ -2525,7 +2538,7 @@ dz(){
 	pda)
 		dz_pda_fetch;;
 	fees)
-		dz_pda_fees;;
+		dz_pda_fees ${2:-};;
 	fund)
 		dz_pda_fund ${2:-};;
 	init)
