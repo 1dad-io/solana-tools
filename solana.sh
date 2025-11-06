@@ -139,7 +139,7 @@ is_dryrun(){ [ "${dryrun}" == 1 ]; }
 is_staked(){ cmp -s ${keypair} ${staked}; }
 user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R $USER: ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
-[ -n "$SSH_CLIENT" ] && client=`echo $SSH_CLIENT | awk '{print $1}'` || client='systemd'
+[ -n "$SSH_CLIENT" ] && client=`echo $SSH_CLIENT | awk '{print $1}'` || client=systemd
 dirs=(tower ledger accounts accounts_index accounts_shrink snapshots snapshots_inc)
 tool=`readlink -f $0`
 lang=${tool%/*}/etc/default/${pkg_name}.lang
@@ -288,7 +288,8 @@ while test $# -gt 0; do
 		oneshot=1
 		shift;;
 	-c|--cron)
-		client='cron'
+		cron=1
+		client=cron
 		shift;;
 	-D|--dryrun)
 		dryrun=1
@@ -2212,7 +2213,7 @@ pda_fund(){
 		str=${msg_dz_pda_init_yn}
 	fi
 	
-	read -p "${str}"
+	read -p "${str}" REPLY </dev/tty
 	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
 		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
 		quiet=1; resp=$(pda_fetch) || error "${resp}"
@@ -2252,18 +2253,20 @@ pda_fees(){
 	# calc the amount due for payment
 	local pub=`${keygen} pubkey ${staked}` pda
 	quiet=1; pda=$(pda_fetch) || error "${pda}"
-	if ! is_num ${pda}; then
-		error ${err_arg_numeric//ARG/pda}
-	else
-		local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
-		local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9g'`
-		local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9g'`
-		local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
-		info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
-		if [ "${fund}" == Y ]; then
-			pda_fund ${debt}
-		fi
+	is_num ${pda} || error ${err_arg_numeric//ARG/pda}
+	local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
+	local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9g'`
+	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9g'`
+	local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
+	info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
+	if [ "${fund}" == N ]; then
+		local str=${msg_dz_pda_fund_ineligible}
+		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
+	
+	# fund the PDA
+	local cmd=$(__str "${cron}" ? yes : ':')
+	${cmd} | pda_fund $(__str "${force}" ? ${fees} : ${debt})
 	
 	unset LOG
 }
