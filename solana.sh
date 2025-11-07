@@ -205,6 +205,7 @@ read_conf(){
 	dz_enabled=${dz_enabled:-0}
 	dz_epoch_offset=${dz_epoch_offset:-1}
 	dz_epoch_progress=${dz_epoch_progress:-90}
+	dz_fees_harvested=${dz_fees_harvested:-1}
 	
 	# logging
 	log_level=${log_level:-info}
@@ -2217,7 +2218,7 @@ pda_fund(){
 	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
 		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
 		quiet=1; resp=$(pda_fetch) || error "${resp}"
-		SMS=y; info "funded=${1:-0},pda=${resp}"; unset SMS
+		SMS=y; info "paid=${1:-0},pda=${resp}"; unset SMS
 	else
 		info ${msg_aborted}
 	fi
@@ -2255,8 +2256,8 @@ pda_fees(){
 	quiet=1; pda=$(pda_fetch) || error "${pda}"
 	is_num ${pda} || error ${err_arg_numeric//ARG/pda}
 	local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
-	local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9g'`
-	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9g'`
+	local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9f'`
+	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
 	local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
 	info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
 	if [ "${fund}" == N ]; then
