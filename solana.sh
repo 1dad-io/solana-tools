@@ -733,6 +733,8 @@ get_wanip(){
 	is_ip ${ip} && echo ${ip}
 }
 
+is_running(){ is_linux && ${cmd_status} &>/dev/null; }
+
 is_virt(){
 	is_linux || { warn ${err_unsupported_os}; return 1; }
 	get_pkg virt-what
@@ -782,7 +784,6 @@ remount(){
 		grep -q "${d}" /proc/mounts 2>/dev/null || sudo mount "${d}"
 	fi
 }
-
 # END common
 
 # BEGIN help
@@ -875,9 +876,8 @@ tx(){
 	local recipient=$1
 	local from_addr=$2
 	local amount=${3:-0}
-	
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}" resp
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}" resp
 	
 	# verify `recipient`
 	[ -n "${recipient}" ] || error ${err_arg} recipient
@@ -931,8 +931,8 @@ precheck(){
 	assert_allowed ${airdrop_allow}
 	
 	# stop if `airdrop_to` >= `airdrop_max`
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}" resp
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_to} 2>&1` || error "${resp}"
 	local b_to=`echo "${resp}" | sed 's/[^0-9.]*//g'`
 	if (( ${b_to%.*} >= ${airdrop_max:-0} )); then
@@ -947,8 +947,8 @@ airdrop(){
 	LOG=y
 	
 	# stop if `airdrop_from` <= `airdrop_min`
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}" resp
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_from} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
 	if (( ${b_from%.*} <= ${airdrop_min:-0} )); then
@@ -996,8 +996,8 @@ poll(){
 	LOG=y
 	
 	# get the temporary keypair balance
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}" resp
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${f} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
 	
@@ -1038,8 +1038,8 @@ balance(){
 	assert_allowed ${balance_allow}
 	
 	LOG=y
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}" resp
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}" resp
 	
 	# stop if `balance_from` <= `balance_min`
 	resp=`${solana} ${opt} balance ${balance_from} 2>&1` || error "${resp}"
@@ -1677,13 +1677,10 @@ EOF"
 # END logging
 
 # BEGIN start/stop/restart
-is_running(){ is_linux && ${cmd_status} &>/dev/null; }
 wait4e(){
 	[ -n "$1" ] || return 0
 	
-	local u=localhost
-	is_running || u=${rpc_url}
-	
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
 	while true; do
 		local epoch=$(curr_epoch ${u})
 		local str=${msg_epoch_wait//CURR/${epoch:-0}}
@@ -2806,9 +2803,8 @@ slots(){
 	local pub=`${keygen} pubkey ${keypair}`
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
-	
-	is_dryrun || local u=localhost
-	local opt="-u ${u:-${rpc_url}}"
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local opt="-u ${u}"
 	
 	# https://stackoverflow.com/a/58617630
 	durationToSeconds(){
@@ -3128,8 +3124,8 @@ rxtower(){
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
+# simplified version of txtower() without tower file manipulation
 vote_off(){
-	# A simplified version of txtower() without tower file manipulation
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to stop voting
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
