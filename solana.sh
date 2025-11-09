@@ -205,7 +205,6 @@ read_conf(){
 	dz_enabled=${dz_enabled:-0}
 	dz_epoch_offset=${dz_epoch_offset:-1}
 	dz_epoch_progress=${dz_epoch_progress:-90}
-	dz_fees_harvested=${dz_fees_harvested:-1}
 	
 	# logging
 	log_level=${log_level:-info}
@@ -1003,7 +1002,7 @@ poll(){
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
 	
 	# make a transfer from the temporary keypair
-	if [ `echo "${b_from} > 0" | bc -l` == 1 ]; then
+	if [ `echo "${b_from} > 0" | bc` == 1 ]; then
 		if tx ${airdrop_to} ${f} ALL; then
 			b_from=0 # x-ALL=0
 		else
@@ -2206,7 +2205,7 @@ pda_fund(){
 	local opt="-u ${moniker} -k ${staked}"
 	local pub=`${keygen} pubkey ${staked}`
 	local arg resp str
-	if [ `echo "${1:-0} >= 0.000000001" | bc -l` == 1 ]; then
+	if [ `echo "${1:-0} >= 0.000000001" | bc` == 1 ]; then
 		arg="--fund ${1}"
 		str=${msg_dz_pda_fund_yn//AMOUNT/${1}}
 	else
@@ -2235,10 +2234,8 @@ pda_fees(){
 	
 	LOG=y
 	
-	local u=localhost
-	is_running || u=${rpc_url}
-	
 	# look `dz_epoch_offset` epochs back
+	local u=$(__fun is_running ? localhost : "${rpc_url}")
 	local offset=${1:-${dz_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
@@ -2260,8 +2257,16 @@ pda_fees(){
 	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
 	local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
 	info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
+	
+	# ensure the PDA needs funding
 	if [ "${fund}" == N ]; then
-		local str=${msg_dz_pda_fund_ineligible}
+		local str=${err_dz_pda_funded}
+		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
+	fi
+	
+	# ensure the PDA is empty
+	if [ `echo "${pda} > 0" | bc` == 1 ]; then
+		local str=${err_dz_pda_not_empty}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
