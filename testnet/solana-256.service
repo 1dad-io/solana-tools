@@ -21,14 +21,12 @@ LimitNOFILE=2000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v3.0.8-jito
+Environment=TAG=v3.0.10-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
-Environment="RELAYER_URL=http://dallas.testnet.relayer.jito.wtf:8100"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
 # [New York]
 # Environment="BLOCK_ENGINE_URL=https://ny.testnet.block-engine.jito.wtf"
-# Environment="RELAYER_URL=http://ny.testnet.relayer.jito.wtf:8100"
 # Environment="SHRED_RECEIVER_ADDR=64.130.35.224:1002"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
@@ -71,7 +69,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--merkle-root-upload-authority 7heQNXEtxSv3wV8sNbuQsDN5xNGbbpLvHGiyXuJxEf7n \
 	--commission-bps 800 \
 	--block-engine-url ${BLOCK_ENGINE_URL} \
-	--relayer-url ${RELAYER_URL} \
 	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
 ExecReload=/bin/kill -s HUP $MAINPID
 ExecStop=/bin/kill -s QUIT $MAINPID

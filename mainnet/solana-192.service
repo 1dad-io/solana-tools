@@ -14,27 +14,31 @@ RestartSec=1
 LimitNOFILE=2000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
-Environment=TAG=v3.0.8-jito
+Environment=TAG=v3.0.10-jito
 # [Amsterdam]
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
-# Environment="RELAYER_URL=http://amsterdam.mainnet.relayer.jito.wtf:8100"
 # Environment="SHRED_RECEIVER_ADDR=74.118.140.240:1002"
+# [Dublin]
+# Environment="BLOCK_ENGINE_URL=https://dublin.mainnet.block-engine.jito.wtf"
+# Environment="SHRED_RECEIVER_ADDR=64.130.61.8:1002"
 # [Frankfurt]
 # Environment="BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf"
-# Environment="RELAYER_URL=http://frankfurt.mainnet.relayer.jito.wtf:8100"
 # Environment="SHRED_RECEIVER_ADDR=64.130.50.14:1002"
+# [London]
+# Environment="BLOCK_ENGINE_URL=https://london.mainnet.block-engine.jito.wtf"
+# Environment="SHRED_RECEIVER_ADDR=142.91.127.175:1002"
 # [New York]
 Environment="BLOCK_ENGINE_URL=https://ny.mainnet.block-engine.jito.wtf"
-Environment="RELAYER_URL=http://ny.mainnet.relayer.jito.wtf:8100"
 Environment="SHRED_RECEIVER_ADDR=141.98.216.96:1002"
-# [Tokyo]
-# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
-# Environment="RELAYER_URL=http://tokyo.mainnet.relayer.jito.wtf:8100"
-# Environment="SHRED_RECEIVER_ADDR=202.8.9.160:1002"
 # [Salt Lake City]
 # Environment="BLOCK_ENGINE_URL=https://slc.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=64.130.53.8:1002"
-# Environment="RELAYER_URL=http://slc.mainnet.relayer.jito.wtf:8100"
+# [Singapore]
+# Environment="BLOCK_ENGINE_URL=https://singapore.mainnet.block-engine.jito.wtf"
+# Environment="SHRED_RECEIVER_ADDR=202.8.11.224:1002"
+# [Tokyo]
+# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
+# Environment="SHRED_RECEIVER_ADDR=202.8.9.160:1002"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/data/tower \
@@ -77,7 +81,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--merkle-root-upload-authority GZctHpWXmsZC1YHACTGGcHhYxjdRqQvTpYkb9LMvxDib \
 	--commission-bps 800 \
 	--block-engine-url ${BLOCK_ENGINE_URL} \
-	--relayer-url ${RELAYER_URL} \
 	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
 ExecReload=/bin/kill -s HUP $MAINPID
 ExecStop=/bin/kill -s QUIT $MAINPID
