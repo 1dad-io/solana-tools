@@ -3020,8 +3020,8 @@ txtower(){
 	local cmd_rx="${cmd_ssh} -p ${ssh_port} ${ssh_user}@${bindip} ${ssh_tool} rxtower"
 	# firedancer
 	if fd_enabled && [ -f "${fdctl}" ]; then
-		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}}"
-		[ "${force}" == 1 ] && cmd_id+=' --force'
+		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
+		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
 		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
@@ -3075,8 +3075,8 @@ rxtower(){
 	local cmd_rm="${cmd_exec} rm -fv ${f}"
 	# firedancer
 	if fd_enabled && [ -f "${fdctl}" ]; then
-		local cmd_id="${cmd_fd//CMD/set-identity ${staked}}"
-		[ "${force}" == 1 ] && cmd_id+=' --force'
+		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
+		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
 		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
 	fi
@@ -3135,8 +3135,8 @@ vote_off(){
 	# make up commands
 	# firedancer
 	if fd_enabled && [ -f "${fdctl}" ]; then
-		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}}"
-		[ "${force}" == 1 ] && cmd_id+=' --force'
+		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
+		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
 		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
