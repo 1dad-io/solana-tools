@@ -16,9 +16,9 @@ pkg_name=solana-tools
 pkg_version=0.1.0
 
 # ternary operator: cond ? a : b
-__num(){ (( $1 )) && echo "$3" || echo "$5"; }
-__str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
-__fun(){ if $1; then echo "$3"; else echo "$5"; fi; }
+if_num(){ (( $1 )) && echo "$3" || echo "$5"; }
+if_str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
+if_fun(){ if $1; then echo "$3"; else echo "$5"; fi; }
 
 # BEGIN reporting
 is_num(){ [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]]; }
@@ -648,7 +648,7 @@ truncate(){ [ -f "$1" ] || return 0; sed -e :a -e "\$q;N;$((${2:-10}+1)),\$D;ba"
 # BEGIN common
 assert_allowed(){
 	[ -n "$1" ] || return 0
-	local str=$(__fun is_staked ? staked : unstaked)
+	local str=$(if_fun is_staked ? staked : unstaked)
 	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
 }
 
@@ -876,7 +876,7 @@ tx(){
 	local recipient=$1
 	local from_addr=$2
 	local amount=${3:-0}
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# verify `recipient`
@@ -931,7 +931,7 @@ precheck(){
 	assert_allowed ${airdrop_allow}
 	
 	# stop if `airdrop_to` >= `airdrop_max`
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_to} 2>&1` || error "${resp}"
 	local b_to=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -947,7 +947,7 @@ airdrop(){
 	LOG=y
 	
 	# stop if `airdrop_from` <= `airdrop_min`
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_from} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -996,7 +996,7 @@ poll(){
 	LOG=y
 	
 	# get the temporary keypair balance
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${f} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1038,7 +1038,7 @@ balance(){
 	assert_allowed ${balance_allow}
 	
 	LOG=y
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# stop if `balance_from` <= `balance_min`
@@ -1680,7 +1680,7 @@ EOF"
 wait4e(){
 	[ -n "$1" ] || return 0
 	
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	while true; do
 		local epoch=$(curr_epoch ${u})
 		local str=${msg_epoch_wait//CURR/${epoch:-0}}
@@ -2232,7 +2232,7 @@ pda_fees(){
 	LOG=y
 	
 	# look `dz_epoch_offset` epochs back
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local offset=${1:-${dz_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
@@ -2252,7 +2252,7 @@ pda_fees(){
 	local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
 	local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9f'`
 	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
-	local fund=$(__num $(echo "${debt} > 0" | bc) ? Y : N)
+	local fund=$(if_num $(echo "${debt} > 0" | bc) ? Y : N)
 	info "epoch=${epoch},due=${fees},pda=${pda},debt=${debt},fund=${fund}"
 	
 	# ensure the PDA needs funding
@@ -2268,8 +2268,8 @@ pda_fees(){
 	fi
 	
 	# fund the PDA
-	local cmd=$(__str "${cron}" ? yes : ':')
-	${cmd} | pda_fund $(__str "${force}" ? ${fees} : ${debt})
+	local cmd=$(if_str "${cron}" ? yes : ':')
+	${cmd} | pda_fund $(if_str "${force}" ? ${fees} : ${debt})
 	
 	unset LOG
 }
@@ -2803,7 +2803,7 @@ slots(){
 	local pub=`${keygen} pubkey ${keypair}`
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
-	local u=$(__fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_fun is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}"
 	
 	# https://stackoverflow.com/a/58617630
