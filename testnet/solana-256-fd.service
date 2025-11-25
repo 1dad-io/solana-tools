@@ -21,8 +21,8 @@ LimitNOFILE=2000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v3.0.10
-Environment=TAG_FD=v0.802.30008
+Environment=TAG=v3.1.2
+Environment=TAG_FD=v0.803.30008
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
@@ -57,6 +57,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
 	--limit-ledger-size 50000000 \
+	--enable-accounts-disk-index \
 	--no-poh-speed-test \
 	--no-port-check
 ExecReload=/bin/kill -s HUP $MAINPID
