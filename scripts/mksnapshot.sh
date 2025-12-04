@@ -24,11 +24,13 @@ sudo mv "${snapshots_inc}"/incremental-* "${tmp}" 2>/dev/null || echo "No file(s
 
 # make a new snapshot <SLOT>
 ${tool} make-snapshot "$1" \
+	--fix-testnet-ed25519-precompile-account \
 	--incremental \
+	--hard-fork 374301609 \
 	--deactivate-feature-gate \
-	htsptAwi2yRoZH83SKaUXykeZGtZHgxkS2QwW1pssR8 \
-	turbnbNRp22nwZCmgVVXFSshz7H7V23zMzQgA46YpmQ \
-	--enable-capitalization-change
+		ENTRYnPAoT5Swwx73YDGzMp3XnNH1kxacyvLosRHza1i \
+	--enable-capitalization-change \
+	--enable-accounts-disk-index
 
 # if the new incremental snapshot created in --ledger instead of
 # --incremental-snapshot-archive-path, move it to the right place

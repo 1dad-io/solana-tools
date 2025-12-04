@@ -2828,7 +2828,7 @@ make_snapshot(){
 	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
 	
 	# run the snapshot tool
-	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") --hard-fork ${slot} "$@" -- ${slot} && ok
+	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") "$@" -- ${slot} && ok
 }
 # END snapshot
 
