@@ -5,6 +5,7 @@
 /jito-solana/
 /keys/*.json
 /keys/relayer/
+/rakurai-validator/
 /solana-patch/
 **/data/*
 

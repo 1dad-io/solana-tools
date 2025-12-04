@@ -362,7 +362,7 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		version=$(opt_val "$1")
-		is_ver ${version} || unset version
+		is_ver ${version} && TAG="v${version}" || unset version
 		shift;;
 	# overrides BEGIN
 	--known-validator*)
@@ -417,12 +417,18 @@ while test $# -gt 0; do
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		full_snapshot_interval_slots=${full_snapshot_interval_slots:-$(opt_val "$1")}
 		shift;;
-	# jito stuff
+	# jito-solana
 	--commission-bps*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		commission_bps=${commission_bps:-$(opt_val "$1")}
+		shift;;
+	--bam-url*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		bam_url=${bam_url:-$(opt_val "$1")}
 		shift;;
 	--block-engine-url*)
 		opt=$1
@@ -446,6 +452,37 @@ while test $# -gt 0; do
 		trust_relayer_packets=${trust_relayer_packets:-1}
 		[ ${trust_relayer_packets} == 1 ] || unset trust_relayer_packets
 		shift;;
+	# rakurai
+	--rewards-merkle-root-authority*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		rewards_merkle_root_authority=${rewards_merkle_root_authority:-$(opt_val "$1")}
+		shift;;
+	--rakurai-activation-program-id*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		rakurai_activation_program_id=${rakurai_activation_program_id:-$(opt_val "$1")}
+		shift;;
+	--reward-distribution-program-id*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		reward_distribution_program_id=${reward_distribution_program_id:-$(opt_val "$1")}
+		shift;;
+	--banking-packet-delay-ms*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		banking_packet_delay_ms=${banking_packet_delay_ms:-$(opt_val "$1")}
+		shift;;
+	--target-slot-adjustment-ms*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		target_slot_adjustment_ms=${target_slot_adjustment_ms:-$(opt_val "$1")}
+		shift;;
 	# overrides END
 	--) # the end of the options
 		shift
@@ -464,6 +501,7 @@ while test $# -gt 0; do
 	airdrop|balance|bind|leader-slot|optimistic-slot|slots|stakes|\
 	check-snapshot|make-snapshot|\
 	wait-for-restart|trim|start|stop|restart|update|\
+	rakurai-status|\
 	jito-reload|relayer|restart-relayer|update-relayer|\
 	dz|\
 	setup|\
@@ -507,7 +545,9 @@ read_systemd(){
 	[ -s "$FILE" ] || FILE=${tool%/*}/${moniker%%[-]*}/${systemd}.service
 	[ -s "$FILE" ] || FILE=${tool%/*}/${moniker%%[-]*}/$(get_systemd).service
 	[ -s "$FILE" ] || error ${err_file_read//FILE/$FILE}
-	TAG=$(get_env 'TAG')
+	
+	OTAG=$(get_env 'TAG')
+	[ -z "$TAG" ] && TAG=$OTAG
 	
 	# firedancer
 	TAG_FD=$(get_env 'TAG_FD')
@@ -564,23 +604,12 @@ read_relayerd(){
 
 # BEGIN binaries
 set_bin(){
-	local release version=$(tag2ver "$TAG")
-	if is_tag $TAG jito; then # jito-solana
-		if cmp_ver "${version}" "${url_jito_since:-9999}"; then
-			release=releases/${version}/solana-release
-		else
-			release=releases/$TAG
-		fi
-	elif is_tag $TAG; then # agave
-		if cmp_ver "${version}" "${url_anza_since:-9999}"; then
-			release=releases/${version}/solana-release
-		else
-			release=releases/$TAG
-		fi
-	fi
-	
 	local d=$HOME/.local/share/solana
-	bin=${d}/install/${release:-active_release}/bin
+	bin=${d}/install/releases/$TAG/bin
+	if [ ! -d "${bin}" ]; then
+		# fallback to active_release
+		bin=${d}/install/active_release/bin
+	fi
 	solana=${bin}/solana
 	keygen=${bin}/solana-keygen
 	installer=${bin}/agave-install
@@ -593,6 +622,14 @@ set_bin(){
 	
 	# jito-relayer
 	is_tag $RELAYER_TAG && relayer=${d}/relayer/$RELAYER_TAG/jito-transaction-relayer
+	
+	# rakurai
+	env_keep=
+	if is_tag ${TAG} rakurai; then
+		# export the scheduler binary path
+		export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
+		env_keep="LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+	fi
 }; set_bin
 # END binaries
 
@@ -619,7 +656,7 @@ set_cmd(){
 	cmd_start="${cmd_exec} systemctl start ${unit}"
 	cmd_stop="${cmd_exec} systemctl stop ${old_unit:-${unit}}"
 	cmd_trim="${cmd_exec} /usr/sbin/fstrim -av"
-	cmd_wait="${cmd_exec} ${validator} -l ${ledger} wait-for-restart-window"
+	cmd_wait="${cmd_exec} ${env_keep} ${validator} -l ${ledger} wait-for-restart-window"
 	
 	# jito-relayer
 	cmd_relayer_status="${cmd_exec} systemctl status ${relayerd}"
@@ -638,7 +675,7 @@ set_cmd(){
 # BEGIN one-liners
 export_(){ [ -z "$1" ] && error ${err_arg}; local var=$1; echo ${!var}; }
 get_gov(){ [ "${cpu_gov}" != 'disabled' ] && echo ${cpu_gov} || echo ${cpu_gov_default}; }
-monitor(){ ${cmd_exec} ${validator} -l ${ledger} monitor; }
+monitor(){ ${cmd_exec} ${env_keep} ${validator} -l ${ledger} monitor; }
 on_boot(){ date >${wd_boot} 2>/dev/null; log "$(rm -fv ${oldunit})"; log "$(rm -fv ${tool%/*}/*.pid)"; }
 starter(){ if [ -z "${reboot}" ]; then ${cmd_reload} && ${cmd_start} && date >${wd_start} 2>/dev/null; else echo 'no-start'; fi; }
 stopper(){ ${cmd_stop}; if [ -s "${oldunit}" ]; then rm -f ${oldunit} && setup_log ${log}; else echo 'no-leftover'; fi; }
@@ -844,6 +881,7 @@ help(){
 	echo -e "        ${CG}monitor${NC} [--fd]             Monitor the validator"
 	echo -e "        ${CG}on-boot${NC}                    Set a reboot flag for the watchdog (run by cron)"
 	echo -e "        ${CG}optimistic-slot${NC} [-1]       Show optimistic slot"
+	echo -e "        ${CG}rakurai-status${NC}             Show runtime status information about rakurai"
 	echo -e "        ${CG}relayer${NC} [status]           Run relayer (only used by systemd)"
 	echo -e "        ${CG}restart${NC} [restart flags]    Restart validator safely within the restart window"
 	echo -e "        ${CG}restart-relayer${NC} [--now]    Restart relayer safely within the restart window"
@@ -1817,19 +1855,25 @@ update(){
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
 	# check what client is tagged
-	local git repo since tag url
+	local branch git repo since tags tag url
 	if jito_enabled; then
-		repo=jito-solana
-		tag='vVERSION-jito'
 		git=${git_jito_solana}
 		url=${url_jito}
 		since=${url_jito_since}
+		repo=jito-solana
+		tag='vVERSION-jito'
+	elif rakurai_enabled; then
+		git=${git_rakurai}
+		branch=main
+		repo=rakurai-validator
+		tags=release
+		tag='vVERSION-rakurai'
 	else
-		repo=agave
-		tag='vVERSION'
 		git=${git_anza}
 		url=${url_anza}
 		since=${url_anza_since}
+		repo=agave
+		tag='vVERSION'
 	fi
 	
 	# display the menu
@@ -1854,11 +1898,12 @@ update(){
 		fi
 		export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 		
-		# fake the sed used below
-		local oTAG=${TAG:-${tag}}
-		TAG=${tag}
+		TAG=${tag} # fake the sed
 	else
 		# build from source for older versions
+		PATCH_BUILD=0
+		REPO=${tool%/*}/${repo}
+		
 		get_pkg curl git
 		if [ ! -f "$HOME/.cargo/env" ]; then
 			curl ${url_rust} -sSf | sh
@@ -1873,21 +1918,18 @@ update(){
 			fi
 		fi
 		
-		[ -n "${git}" ] || error ${err_git_repo}
-		local d=${tool%/*}/${repo}
-		if [ ! -d "${d}/.git" ]; then
+		if [ ! -d "$REPO/.git" ]; then
+			[ -n "${git}" ] || error ${err_git_repo}
 			git -C ${tool%/*} clone ${git} --recurse-submodules
-			cd ${d}
+			cd $REPO
 		else
-			cd ${d}
+			cd $REPO
 			git fetch --all
-			git reset --hard origin/master
+			git reset --hard origin/${branch:-master}
 			git clean -fd
 		fi
-		
-		local oTAG=$TAG
 		export TAG=${tag}
-		git checkout tags/$TAG
+		git checkout ${tags:-tags}/$TAG
 		git submodule update --init --recursive
 		
 		# apply patches
@@ -1906,7 +1948,7 @@ update(){
 				git fetch origin
 				git reset --hard origin/master
 				git clean -fd
-				cd ${d}
+				cd $REPO
 				
 				# remove the patch config if missing before updating the repo
 				if [ -z "${f}" ]; then
@@ -1917,7 +1959,7 @@ update(){
 		fi
 		if [ -d "${p}" ]; then
 			find -L ${p} -type f -name '*.rs' | while read f; do
-				local t=${d}${f//${p}/}
+				local t=$REPO${f//${p}/}
 				mkdir -p ${t%/*}
 				cp -av ${f} ${t}
 			done
@@ -1928,17 +1970,19 @@ update(){
 			warn ${msg_patch_applied}
 		fi
 		
-		# make install
-		[ "${setup_cli_full}" == 1 ] || local arg='--validator-only'
-		local target=$HOME/.local/share/solana/install/releases/$TAG
-		local parent=${target%/*}
-		CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh ${arg} ${target}
-		ln -sfnv ${target} ${parent//releases/active_release}
+		if [ "$PATCH_BUILD" != 1 ]; then
+			# make install
+			[ "${setup_cli_full}" == 1 ] || local arg='--validator-only'
+			local target=$HOME/.local/share/solana/install/releases/$TAG
+			local parent=${target%/*}
+			CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh ${arg} ${target}
+			ln -sfnv ${target} ${parent//releases/active_release}
+		fi
 	fi
 	
 	# update the systemd unit file with the version tag
 	local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
-	${cmd:-echo no-init} && sed -i --follow-symlinks "s/$oTAG/$TAG/" ${f} && set_bin && set_cmd && ok
+	${cmd:-echo no-init} && sed -i --follow-symlinks "s/${OTAG:-${tag}}/$TAG/" ${f} && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
 	# resume the watchdog
@@ -1946,6 +1990,8 @@ update(){
 	
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
+	
+	unset PATCH_BUILD REPO
 }
 # END update
 
@@ -1981,7 +2027,9 @@ fd_update(){
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
+	
 	# build from source
+	REPO=${tool%/*}/firedancer
 	get_pkg curl git
 	if [ ! -f "$HOME/.cargo/env" ]; then
 		curl ${url_rust} -sSf | sh
@@ -1995,19 +2043,20 @@ fd_update(){
 			sudo apt install libclang-dev libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make libprotobuf-dev protobuf-compiler -y &>/dev/null
 		fi
 	fi
-	[ -n "${git_firedancer}" ] || error ${err_git_repo}
-	local d=${tool%/*}/firedancer
-	if [ ! -d "${d}/.git" ]; then
+	
+	if [ ! -d "$REPO/.git" ]; then
+		[ -n "${git_firedancer}" ] || error ${err_git_repo}
 		git -C ${tool%/*} clone ${git_firedancer} --recurse-submodules
-		cd ${d}
+		cd $REPO
 	else
-		cd ${d}
+		cd $REPO
 		git fetch --all
 #		git reset --hard origin/master
 # it doesn't work as expected, ./build must be cleaned as well
 		git clean -fd
 rm -rf ./build
 	fi
+	
 	local oTAG_FD=$TAG_FD
 	export TAG_FD=${tag}
 	git checkout $TAG_FD
@@ -2019,7 +2068,7 @@ rm -rf ./build
 	local target=$HOME/.local/share/solana/fd/$TAG_FD
 	local parent=${target%/*}
 	mkdir -p ${target}
-	cp -au ${d}/build/native/gcc/bin ${target}
+	cp -au $REPO/build/native/gcc/bin ${target}
 	ln -sfnv ${target} ${parent}/active_release
 	
 	# update the systemd unit file with the version tag
@@ -2032,6 +2081,8 @@ rm -rf ./build
 	
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
+	
+	unset REPO
 }
 
 # echo $(fd_sanitize $(<fd.log)); exit
@@ -2044,14 +2095,30 @@ fd_sanitize(){
 }
 # END firedancer
 
+# BEGIN rakurai
+rakurai_enabled(){ is_tag $TAG rakurai; }
+rakurai_status(){
+	rakurai_enabled || error ${msg_pkg_disabled//PKG/rakurai}
+	date
+	for p in "block time" "Banking packet delay" "rakurai_status"; do
+		line=$(grep "$p" ${log} | tail -n1)
+		echo "$p: ${line:-not found}"
+	done
+}
+# END rakurai
+
 # BEGIN jito-solana
 jito_enabled(){ is_tag $TAG jito; }
 jito_reload(){
-	jito_enabled || error ${err_version}
+	jito_enabled || rakurai_enabled || error ${err_version}
 	is_running   || error ${err_not_allowed//COND/running}
-	${cmd_exec} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
-	${cmd_exec} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
-	${cmd_exec} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
+	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
+	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
+	if rakurai_enabled; then
+		${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
+	else
+		${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
+	fi
 	ok ${msg_pkg_configured//PKG/jito}
 }
 # END jito-solana
@@ -2113,7 +2180,9 @@ update_relayer(){
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
+	
 	# build from source
+	REPO=${tool%/*}/jito-relayer
 	get_pkg curl git
 	if [ ! -f "$HOME/.cargo/env" ]; then
 		curl ${url_rust} -sSf | sh
@@ -2127,17 +2196,18 @@ update_relayer(){
 			sudo apt install libclang-dev libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make libprotobuf-dev protobuf-compiler -y &>/dev/null
 		fi
 	fi
-	[ -n "${git_jito_relayer}" ] || error ${err_git_repo}
-	local d=${tool%/*}/jito-relayer
-	if [ ! -d "${d}/.git" ]; then
+	
+	if [ ! -d "$REPO/.git" ]; then
+		[ -n "${git_jito_relayer}" ] || error ${err_git_repo}
 		git -C ${tool%/*} clone ${git_jito_relayer} --recurse-submodules
-		cd ${d}
+		cd $REPO
 	else
-		cd ${d}
+		cd $REPO
 		git fetch --all
 		git reset --hard origin/master
 		git clean -fd
 	fi
+	
 	local oRELAYER_TAG=$RELAYER_TAG
 	export RELAYER_TAG=${tag}
 	git checkout tags/$RELAYER_TAG
@@ -2147,7 +2217,7 @@ update_relayer(){
 	# make install
 	relayer=${relayer//$oRELAYER_TAG/$RELAYER_TAG}
 	mkdir -p ${relayer%/*}
-	cp -u ${d}/target/release/jito-transaction-relayer ${relayer}
+	cp -u $REPO/target/release/jito-transaction-relayer ${relayer}
 	
 	# update the systemd unit file with the version tag
 	# no need to call set_bin as `relayer` is updated above
@@ -2157,6 +2227,8 @@ update_relayer(){
 	
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && relayer_running && restart_relayer || :
+	
+	unset REPO
 }
 # END jito-relayer
 
@@ -3023,7 +3095,7 @@ txtower(){
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity ${unstaked}"
+		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
 	[ "${unstaked%/*}" == "${keypair%/*}" ] && local unstaked=${unstaked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${unstaked} ${keypair}"
@@ -3078,7 +3150,7 @@ rxtower(){
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
+		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
 	fi
 	[ "${staked%/*}" == "${keypair%/*}" ] && local staked=${staked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${staked} ${keypair}"
@@ -3138,7 +3210,7 @@ vote_off(){
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${validator} -l ${ledger} set-identity ${unstaked}"
+		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
 	[ "${unstaked%/*}" == "${keypair%/*}" ] && local unstaked=${unstaked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${unstaked} ${keypair}"
@@ -3788,12 +3860,24 @@ validator(){
 		log "${res}, ${str//FLAG/${flag}}"
 	fi
 	
-	# jito stuff
+	# jito-solana
 	if jito_enabled; then
 		[ -n "${commission_bps}" ]         && args+=("--commission-bps ${commission_bps}")
 		[ -n "${block_engine_url}" ]       && args+=("--block-engine-url ${block_engine_url}")
 		[ -n "${relayer_url}" ]            && args+=("--relayer-url ${relayer_url}")
 		[ -n "${shred_receiver_address}" ] && args+=("--shred-receiver-address ${shred_receiver_address}")
+	elif rakurai_enabled; then
+		# jito-bam
+		[ -n "${commission_bps}" ]         && args+=("--commission-bps ${commission_bps}")
+		[ -n "${bam_url}" ]                && args+=("--bam-url ${bam_url}")
+		[ -n "${block_engine_url}" ]       && args+=("--block-engine-url ${block_engine_url}")
+		[ -n "${shred_receiver_address}" ] && args+=("--shred-receiver-address ${shred_receiver_address}")
+		# rakurai
+		[ -n "${rewards_merkle_root_authority}" ]  && args+=("--rewards-merkle-root-authority ${rewards_merkle_root_authority}")
+		[ -n "${rakurai_activation_program_id}" ]  && args+=("--rakurai-activation-program-id ${rakurai_activation_program_id}")
+		[ -n "${reward_distribution_program_id}" ] && args+=("--reward-distribution-program-id ${reward_distribution_program_id}")
+		[ -n "${banking_packet_delay_ms}" ]        && args+=("--banking-packet-delay-ms ${banking_packet_delay_ms}")
+		[ -n "${target_slot_adjustment_ms}" ]      && args+=("--target-slot-adjustment-ms ${target_slot_adjustment_ms}")
 	fi
 	# jito-relayer
 	# check if relayer is enabled and required by the systemd unit file
@@ -3810,6 +3894,7 @@ validator(){
 	done
 	
 	# run the validator
+	[ -n "${env_keep}" ] && log "${env_keep}"
 	log "${msg_log_start//CLIENT/${client}}" && ok
 	pid_unlock ${lock}
 	
