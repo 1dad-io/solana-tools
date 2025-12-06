@@ -27,6 +27,7 @@ ${tool} make-snapshot "$1" \
 	--fix-testnet-ed25519-precompile-account \
 	--incremental \
 	--hard-fork 374301609 \
+	--hard-fork 374301609 \
 	--deactivate-feature-gate \
 		ENTRYnPAoT5Swwx73YDGzMp3XnNH1kxacyvLosRHza1i \
 	--enable-capitalization-change \
