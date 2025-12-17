@@ -41,9 +41,6 @@ user = "ubuntu"
 #	genesis_fetch = true
 	poh_speed_test = false
 	expected_genesis_hash = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY"
-#	wait_for_supermajority_at_slot = 0
-#	expected_bank_hash = ""
-#	expected_shred_version = 0
 	known_validators = [
 		"5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on",
 		"dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs",

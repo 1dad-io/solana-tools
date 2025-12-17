@@ -4,7 +4,7 @@
 # Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN - Certus One
 # eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ  - SerGo
 # 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv - Algo|Stake
-# FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS - 1Dad
+# FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS - 1dad
 
 [Unit]
 Description=Validator
@@ -21,7 +21,7 @@ LimitNOFILE=2000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v3.1.2-jito
+Environment=TAG=v3.1.4-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
