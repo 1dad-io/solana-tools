@@ -362,7 +362,7 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		version=$(opt_val "$1")
-		is_ver ${version} && TAG="v${version}" || unset version
+		is_ver ${version} || unset version
 		shift;;
 	# overrides BEGIN
 	--known-validator*)
@@ -546,8 +546,7 @@ read_systemd(){
 	[ -s "$FILE" ] || FILE=${tool%/*}/${moniker%%[-]*}/$(get_systemd).service
 	[ -s "$FILE" ] || error ${err_file_read//FILE/$FILE}
 	
-	OTAG=$(get_env 'TAG')
-	[ -z "$TAG" ] && TAG=$OTAG
+	TAG=$(get_env 'TAG')
 	
 	# firedancer
 	TAG_FD=$(get_env 'TAG_FD')
@@ -679,6 +678,7 @@ monitor(){ ${cmd_exec} ${env_keep} ${validator} -l ${ledger} monitor; }
 on_boot(){ date >${wd_boot} 2>/dev/null; log "$(rm -fv ${oldunit})"; log "$(rm -fv ${tool%/*}/*.pid)"; }
 starter(){ if [ -z "${reboot}" ]; then ${cmd_reload} && ${cmd_start} && date >${wd_start} 2>/dev/null; else echo 'no-start'; fi; }
 stopper(){ ${cmd_stop}; if [ -s "${oldunit}" ]; then rm -f ${oldunit} && setup_log ${log}; else echo 'no-leftover'; fi; }
+symlink(){ [[ ! -L "$2" || "$(readlink -f "$2")" != "$(readlink -f "$1")" ]] && ln -sfnv "$1" "$2"; }
 truncate(){ [ -f "$1" ] || return 0; sed -e :a -e "\$q;N;$((${2:-10}+1)),\$D;ba" -i --follow-symlinks $1 2>/dev/null; }
 # END one-liners
 
@@ -1854,53 +1854,77 @@ update(){
 	local lock=${tool%/*}/watchdog.pid
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
-	# check what client is tagged
-	local branch git repo since tags tag url
-	if jito_enabled; then
-		git=${git_jito_solana}
-		url=${url_jito}
-		since=${url_jito_since}
-		repo=jito-solana
-		tag='vVERSION-jito'
-	elif rakurai_enabled; then
-		git=${git_rakurai}
-		branch=main
-		repo=rakurai-validator
-		tags=release
-		tag='vVERSION-rakurai'
-	else
-		git=${git_anza}
-		url=${url_anza}
-		since=${url_anza_since}
-		repo=agave
-		tag='vVERSION'
-	fi
+	# default client: agave
+	local oTAG=$TAG
+	local branch=master
+	local tags=tags
+	local tag='vVERSION'
+	local git=${git_anza}
+	local url=${url_anza}
+	local repo=
+	set_git(){
+		if jito_enabled; then
+			git=${git_jito_solana}
+			url=${url_jito}
+			tag='vVERSION-jito'
+		elif rakurai_enabled; then
+			branch=main
+			tags=release
+			git=${git_rakurai}
+			tag='vVERSION-rakurai'
+		fi
+		repo=$(echo "${git##*/}" | sed 's/\.git//g')
+	}; set_git
 	
 	# display the menu
 	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; } || tag='vVERSION'
-	tag=${tag//VERSION/${version}}
+	
+	# set environment
+	TAG=${tag//VERSION/${version}} && set_git
+	TARGET=$HOME/.local/share/solana/install/releases/$TAG
+	local parent=${TARGET%/*}
+	local active=${parent//releases/active_release}
+	info "TAG=$TAG"
+	
+	save_tag(){
+		# if no TAG is found, the user prefers not to declare a specific TAG,
+		# and the active_release symlink will be used to resolve the binaries
+		local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
+		sed -i --follow-symlinks "s/\(Environment=TAG=\)[^[:space:]]*/\1$1/" ${f} || error ${err_file_write//FILE/${f}}
+	}
+	
 	# check if it's already installed
-	if [ "$TAG" == "${tag}" -a -f "${solana}" ]; then
-		local str=${err_installed//PKG/${tag}}
-		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
+	if [ -s "$TARGET/bin/${solana##*/}" ]; then
+		local str=${err_pkg_installed//PKG/$TAG}
+		if [ "${force}" == 1 ]; then
+			warn ${str} ${tip_forced}
+		else
+			# update the systemd unit file with the new tag
+			[ "$TAG" == "$oTAG" ] || save_tag $TAG
+			
+			# set new active_release
+			symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
+			
+			warn ${str} ${tip_force}
+			return
+		fi
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
-	if cmp_ver "${version}" "${since:-9999}"; then
+	if [ -z "${git}" ]; then
 		# install binaries
 		if [ -f "${installer}" ]; then
-			cmd="${installer} init ${tag}"
+			local cmd="${installer} init $TAG"
 		else
+			[ -n "${url}" ] || ${err_url}
 			get_pkg curl
 			local res
-			res=`curl -sSfL ${url//VERSION/${tag}} 2>&1` || error ${res}
+			res=`curl -sSfL ${url//VERSION/$TAG} 2>&1` || error ${res}
 			sh -c "${res}"
 		fi
 		export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-		
-		TAG=${tag} # fake the sed
 	else
-		# build from source for older versions
+		# build from source
 		PATCH_BUILD=0
 		REPO=${tool%/*}/${repo}
 		
@@ -1919,17 +1943,16 @@ update(){
 		fi
 		
 		if [ ! -d "$REPO/.git" ]; then
-			[ -n "${git}" ] || error ${err_git_repo}
 			git -C ${tool%/*} clone ${git} --recurse-submodules
 			cd $REPO
 		else
 			cd $REPO
 			git fetch --all
-			git reset --hard origin/${branch:-master}
+			git reset --hard origin/${branch}
 			git clean -fd
 		fi
-		export TAG=${tag}
-		git checkout ${tags:-tags}/$TAG
+		export TAG=$TAG
+		git checkout ${tags}/$TAG
 		git submodule update --init --recursive
 		
 		# apply patches
@@ -1950,7 +1973,7 @@ update(){
 				git clean -fd
 				cd $REPO
 				
-				# remove the patch config if missing before updating the repo
+				# remove the patch config if it was missing before update
 				if [ -z "${f}" ]; then
 					f=$(find_conf ${p%/*})
 					rm -fv ${f}
@@ -1965,24 +1988,23 @@ update(){
 			done
 		fi
 		if [ -f "${p}.sh" ]; then
-			warn ${msg_patch_found//FILE/${p##*/}.sh}
+			info ${msg_patch_found//FILE/${p##*/}.sh}
 			source ${p}.sh
-			warn ${msg_patch_applied}
+			info ${msg_patch_applied}
 		fi
 		
 		if [ "$PATCH_BUILD" != 1 ]; then
-			# make install
+			# build & make install
 			[ "${setup_cli_full}" == 1 ] || local arg='--validator-only'
-			local target=$HOME/.local/share/solana/install/releases/$TAG
-			local parent=${target%/*}
-			CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh ${arg} ${target}
-			ln -sfnv ${target} ${parent//releases/active_release}
+			CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh ${arg} $TARGET
 		fi
+		
+		# set new active_release
+		symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
 	fi
 	
-	# update the systemd unit file with the version tag
-	local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
-	${cmd:-echo no-init} && sed -i --follow-symlinks "s/${OTAG:-${tag}}/$TAG/" ${f} && set_bin && set_cmd && ok
+	# update the systemd unit file with the new tag
+	${cmd:-echo no-init} && save_tag $TAG && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
 	# resume the watchdog
@@ -1991,7 +2013,7 @@ update(){
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 	
-	unset PATCH_BUILD REPO
+	unset PATCH_BUILD REPO TARGET
 }
 # END update
 
@@ -2016,20 +2038,24 @@ fd_update(){
 	local lock=${tool%/*}/watchdog.pid
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
+	local git=${git_firedancer}
+	[ -n "${git}" ] || error ${err_git_repo}
+	
 	# display the menu
-	[ -z "${version}" ] && { local version; version=$(menu_version 'firedancer') || return; }
+	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
+	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; }
 	local tag="v${version}"
 	
 	# check if it's already installed
 	if [ "$TAG_FD" == "${tag}" -a -f "${fdctl}" ]; then
-		local str=${err_installed//PKG/${tag}}
+		local str=${err_pkg_installed//PKG/${tag}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
 	
 	# build from source
-	REPO=${tool%/*}/firedancer
+	REPO=${tool%/*}/${repo}
 	get_pkg curl git
 	if [ ! -f "$HOME/.cargo/env" ]; then
 		curl ${url_rust} -sSf | sh
@@ -2045,8 +2071,7 @@ fd_update(){
 	fi
 	
 	if [ ! -d "$REPO/.git" ]; then
-		[ -n "${git_firedancer}" ] || error ${err_git_repo}
-		git -C ${tool%/*} clone ${git_firedancer} --recurse-submodules
+		git -C ${tool%/*} clone ${git} --recurse-submodules
 		cd $REPO
 	else
 		cd $REPO
@@ -2169,20 +2194,24 @@ update_relayer(){
 	# ensure the relayerd is configured
 	[ -z "${relayerd}" ] && error ${err_systemd}
 	
+	local git=${git_jito_relayer}
+	[ -n "${git}" ] || error ${err_git_repo}
+	
 	# display the menu
-	[ -z "${version}" ] && { local version; version=$(menu_version 'jito-relayer') || return; }
+	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
+	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; }
 	local tag="v${version}"
 	
 	# check if it's already installed
 	if [ "$RELAYER_TAG" == "${tag}" -a -f "${relayer}" ]; then
-		local str=${err_installed//PKG/${tag}}
+		local str=${err_pkg_installed//PKG/${tag}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
 	
 	# build from source
-	REPO=${tool%/*}/jito-relayer
+	REPO=${tool%/*}/${repo}
 	get_pkg curl git
 	if [ ! -f "$HOME/.cargo/env" ]; then
 		curl ${url_rust} -sSf | sh
@@ -2198,8 +2227,7 @@ update_relayer(){
 	fi
 	
 	if [ ! -d "$REPO/.git" ]; then
-		[ -n "${git_jito_relayer}" ] || error ${err_git_repo}
-		git -C ${tool%/*} clone ${git_jito_relayer} --recurse-submodules
+		git -C ${tool%/*} clone ${git} --recurse-submodules
 		cd $REPO
 	else
 		cd $REPO
@@ -2349,7 +2377,7 @@ pda_fees(){
 dz_setup(){
 	# check if it's already installed
 	if [ -f "${dz}" ]; then
-		local str=${err_installed//PKG/doublezero}
+		local str=${err_pkg_installed//PKG/doublezero}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	else
 		# install doublezero
@@ -2760,16 +2788,14 @@ setup(){
 	
 	# install the snapshot finder
 	if [ "${setup_finder}" == 1 -a -n "${git_finder}" ]; then
-		get_pkg git
-		rm -rf solana-snapshot-finder
-		# readme BEGIN
-		sudo apt install python3-venv git -y &>/dev/null \
-		&& git clone ${git_finder} \
-		&& cd solana-snapshot-finder \
-		&& python3 -m venv venv \
-		&& source ./venv/bin/activate \
-		&& pip3 install -r requirements.txt
-		# readme END
+		local repo=${tool%/*}/${git_finder##*/}
+		rm -rf ${repo}
+		get_pkg git python3-venv
+		git -C ${tool%/*} clone ${git_finder}
+		cd ${repo}
+		python3 -m venv venv
+		source ./venv/bin/activate
+		pip3 install -r requirements.txt
 		info ${msg_pkg_installed//PKG/snapshot-finder}
 	fi
 	
