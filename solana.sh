@@ -626,7 +626,7 @@ set_bin(){
 	env_keep=
 	if is_tag ${TAG} rakurai; then
 		# export the scheduler binary path
-		export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
+		[[ ":$LD_LIBRARY_PATH:" == *":${bin}:"* ]] || export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
 		env_keep="LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 	fi
 }; set_bin
