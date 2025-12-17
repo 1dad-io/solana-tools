@@ -32,7 +32,6 @@ WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
-	--accounts-index-path /mnt/acct/accounts_index \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \
@@ -62,7 +61,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
 	--limit-ledger-size 50000000 \
-	--enable-accounts-disk-index \
 	--no-poh-speed-test \
 	--no-port-check \
 	--tip-payment-program-pubkey GJHtFqM9agxPmkeKjHny6qiRKrXZALvvFGiKf11QE7hy \
