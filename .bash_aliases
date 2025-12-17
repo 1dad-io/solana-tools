@@ -13,6 +13,7 @@ log=`${tool} export log`
 CFGFILE=`${tool} export CFGFILE`
 LOGFILE=`${tool} export LOGFILE`
 [[ ":$PATH:" == *":${bin}:"* ]] || export PATH="${bin}:$PATH"
+[[ ":$LD_LIBRARY_PATH:" == *":${bin}:"* ]] || export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
 alias airdrop="${tool} airdrop"
 alias balance="solana balance"
 alias bind="${tool} bind"
