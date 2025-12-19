@@ -110,10 +110,12 @@ debug(){
 # END reporting
 
 # BEGIN versioning
-ver_re='[0-9]+(\.[0-9]+)*'; suffix='(\-[.a-z0-9]+){0,1}'
+ver_re='[0-9]+(\.[0-9]+)*'
+suffix='(\-[.a-z0-9]+){0,1}'
 is_ver(){ [[ "$1" =~ ^${ver_re}${suffix}$ ]]; }
 is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
 tag2ver(){ is_tag "$1" && echo "$1" | sed -E "s/${suffix}//g" | sed 's/[^.0-9]*//g' || echo "$1"; }
+upd_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}${suffix}$/v$2\2/" || echo "v$2"; }
 cmp_ver(){
 	[ $# -eq 2 ] || error ${err_arg_count}
 	is_ver "$1"  || error ${err_version} 1
@@ -1858,7 +1860,6 @@ update(){
 	local oTAG=$TAG
 	local branch=master
 	local tags=tags
-	local tag='vVERSION'
 	local git=${git_anza}
 	local url=${url_anza}
 	local repo=
@@ -1866,21 +1867,25 @@ update(){
 		if jito_enabled; then
 			git=${git_jito_solana}
 			url=${url_jito}
-			tag='vVERSION-jito'
 		elif rakurai_enabled; then
 			branch=main
 			tags=release
 			git=${git_rakurai}
-			tag='vVERSION-rakurai'
 		fi
 		repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	}; set_git
 	
-	# display the menu
-	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; } || tag='vVERSION'
+	# TAG may be unset, read from the systemd, or provided in the CLI
+	if [ -z "${version}" ]; then
+		# no `version` CLI argument is provided, display the menu
+		local version; version=$(menu_version ${repo}) || return
+		TAG=$(upd_tag $TAG ${version})
+	else
+		# TAG is provided, drop the one we read from the systemd
+		TAG=$(upd_tag '' ${version}) && set_git # re-initialize
+	fi
 	
 	# set environment
-	TAG=${tag//VERSION/${version}} && set_git
 	TARGET=$HOME/.local/share/solana/install/releases/$TAG
 	local parent=${TARGET%/*}
 	local active=${parent//releases/active_release}
