@@ -115,7 +115,6 @@ suffix='(\-[.a-z0-9]+){0,1}'
 is_ver(){ [[ "$1" =~ ^${ver_re}${suffix}$ ]]; }
 is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
 tag2ver(){ is_tag "$1" && echo "$1" | sed -E "s/${suffix}//g" | sed 's/[^.0-9]*//g' || echo "$1"; }
-upd_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}${suffix}$/v$2\2/" || echo "v$2"; }
 cmp_ver(){
 	[ $# -eq 2 ] || error ${err_arg_count}
 	is_ver "$1"  || error ${err_version} 1
@@ -622,7 +621,7 @@ set_bin(){
 	fdctl=${d}/fd/${TAG_FD:-active_release}/bin/fdctl
 	
 	# jito-relayer
-	is_tag $RELAYER_TAG && relayer=${d}/relayer/$RELAYER_TAG/jito-transaction-relayer
+	relayer=${d}/relayer/${RELAYER_TAG:-active_release}/jito-transaction-relayer
 	
 	# rakurai
 	env_keep=
@@ -1846,6 +1845,14 @@ restart(){
 # END start/stop/restart
 
 # BEGIN update
+make_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}${suffix}$/v$2\2/" || echo "v$2"; }
+save_tag(){
+	# if no TAG is found, the user prefers not to declare a specific TAG,
+	# and the active_release symlink will be used to resolve the binaries
+	local name=${2:-TAG}
+	local f=${tool%/*}/${moniker%%[-]*}/${3:-${systemd}}.service
+	sed -i --follow-symlinks "s/\(Environment=${name}=\)[^[:space:]]*/\1$1/" ${f} || error ${err_file_write//FILE/${f}}
+}
 update(){
 	# is_linux || { warn ${err_unsupported_os}; return; }
 	
@@ -1862,7 +1869,7 @@ update(){
 	local tags=tags
 	local git=${git_anza}
 	local url=${url_anza}
-	local repo=
+	local repo=validator
 	set_git(){
 		if jito_enabled; then
 			git=${git_jito_solana}
@@ -1872,17 +1879,17 @@ update(){
 			tags=release
 			git=${git_rakurai}
 		fi
-		repo=$(echo "${git##*/}" | sed 's/\.git//g')
+		[ -n "${git}" ] && repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	}; set_git
 	
 	# TAG may be unset, read from the systemd, or provided in the CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
-		TAG=$(upd_tag $TAG ${version})
+		TAG=$(make_tag $TAG ${version})
 	else
-		# TAG is provided, drop the one we read from the systemd
-		TAG=$(upd_tag '' ${version}) && set_git # re-initialize
+		# `version` is provided to replace `TAG`, so drop it now
+		TAG=$(make_tag '' ${version}) && set_git # re-initialize
 	fi
 	
 	# set environment
@@ -1890,13 +1897,6 @@ update(){
 	local parent=${TARGET%/*}
 	local active=${parent//releases/active_release}
 	info "TAG=$TAG"
-	
-	save_tag(){
-		# if no TAG is found, the user prefers not to declare a specific TAG,
-		# and the active_release symlink will be used to resolve the binaries
-		local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
-		sed -i --follow-symlinks "s/\(Environment=TAG=\)[^[:space:]]*/\1$1/" ${f} || error ${err_file_write//FILE/${f}}
-	}
 	
 	# check if it's already installed
 	if [ -s "$TARGET/bin/${solana##*/}" ]; then
@@ -2043,18 +2043,44 @@ fd_update(){
 	local lock=${tool%/*}/watchdog.pid
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
+	# client: firedancer
+	local oTAG=$TAG_FD
+	local branch=master
 	local git=${git_firedancer}
 	[ -n "${git}" ] || error ${err_git_repo}
-	
-	# display the menu
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
-	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; }
-	local tag="v${version}"
+	
+	# TAG may be unset, read from the systemd, or provided in the CLI
+	if [ -z "${version}" ]; then
+		# no `version` CLI argument is provided, display the menu
+		local version; version=$(menu_version ${repo}) || return
+		TAG_FD=$(make_tag $TAG_FD ${version})
+	else
+		# `version` is provided to replace `TAG_FD`, so drop it now
+		TAG_FD=$(make_tag '' ${version})
+	fi
+	
+	# set environment
+	TARGET=$HOME/.local/share/solana/fd/$TAG_FD
+	local parent=${TARGET%/*}
+	local active=${parent}/active_release # fd has its own active_release
+	info "TAG_FD=$TAG_FD"
 	
 	# check if it's already installed
-	if [ "$TAG_FD" == "${tag}" -a -f "${fdctl}" ]; then
-		local str=${err_pkg_installed//PKG/${tag}}
-		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
+	if [ -s "$TARGET/bin/${fdctl##*/}" ]; then
+		local str=${err_pkg_installed//PKG/$TAG_FD}
+		if [ "${force}" == 1 ]; then
+			warn ${str} ${tip_forced}
+		else
+			# update the systemd unit file with the new tag
+			[ "$TAG_FD" == "$oTAG" ] || save_tag $TAG_FD 'TAG_FD'
+			
+			# set new active_release
+			symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
+			
+			warn ${str} ${tip_force}
+			return
+		fi
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
@@ -2081,29 +2107,28 @@ fd_update(){
 	else
 		cd $REPO
 		git fetch --all
-#		git reset --hard origin/master
-# it doesn't work as expected, ./build must be cleaned as well
+		git reset --hard origin/${branch}
 		git clean -fd
-rm -rf ./build
+		
+		# git clean doesn't work as expected, ./build must be cleaned
+		rm -rf ./build
 	fi
 	
-	local oTAG_FD=$TAG_FD
-	export TAG_FD=${tag}
+	export TAG_FD=$TAG_FD
 	git checkout $TAG_FD
-	git submodule update --init --recursive
+	git submodule update # --init --recursive (no args in the docs)
 	./deps.sh
 	make -j fdctl solana
 	
 	# make install
-	local target=$HOME/.local/share/solana/fd/$TAG_FD
-	local parent=${target%/*}
-	mkdir -p ${target}
-	cp -au $REPO/build/native/gcc/bin ${target}
-	ln -sfnv ${target} ${parent}/active_release
+	mkdir -p $TARGET
+	cp -au $REPO/build/native/gcc/bin $TARGET
 	
-	# update the systemd unit file with the version tag
-	local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
-	sed -i --follow-symlinks "s/$oTAG_FD/$TAG_FD/" ${f} && set_bin && set_cmd && ok
+	# set new active_release
+	symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
+	
+	# update the systemd unit file with the new tag
+	save_tag $TAG_FD 'TAG_FD' && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
 	# resume the watchdog
@@ -2112,7 +2137,7 @@ rm -rf ./build
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 	
-	unset REPO
+	unset REPO TARGET
 }
 
 # echo $(fd_sanitize $(<fd.log)); exit
@@ -2199,18 +2224,45 @@ update_relayer(){
 	# ensure the relayerd is configured
 	[ -z "${relayerd}" ] && error ${err_systemd}
 	
+	# client: jito-relayer
+	local oTAG=$RELAYER_TAG
+	local branch=master
+	local tags=tags
 	local git=${git_jito_relayer}
 	[ -n "${git}" ] || error ${err_git_repo}
-	
-	# display the menu
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
-	[ -z "${version}" ] && { local version; version=$(menu_version ${repo}) || return; }
-	local tag="v${version}"
+	
+	# TAG may be unset, read from the systemd, or provided in the CLI
+	if [ -z "${version}" ]; then
+		# no `version` CLI argument is provided, display the menu
+		local version; version=$(menu_version ${repo}) || return
+		RELAYER_TAG=$(make_tag $RELAYER_TAG ${version})
+	else
+		# `version` is provided to replace `RELAYER_TAG`, so drop it now
+		RELAYER_TAG=$(make_tag '' ${version})
+	fi
+	
+	# set environment
+	TARGET=$HOME/.local/share/solana/relayer/$RELAYER_TAG
+	local parent=${TARGET%/*}
+	local active=${parent}/active_release # relayer has its own active_release
+	info "RELAYER_TAG=$RELAYER_TAG"
 	
 	# check if it's already installed
-	if [ "$RELAYER_TAG" == "${tag}" -a -f "${relayer}" ]; then
-		local str=${err_pkg_installed//PKG/${tag}}
-		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
+	if [ -s "$TARGET/${relayer##*/}" ]; then
+		local str=${err_pkg_installed//PKG/$RELAYER_TAG}
+		if [ "${force}" == 1 ]; then
+			warn ${str} ${tip_forced}
+		else
+			# update the systemd unit file with the new tag
+			[ "$RELAYER_TAG" == "$oTAG" ] || save_tag $RELAYER_TAG 'TAG' ${relayerd}
+			
+			# set new active_release
+			symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
+			
+			warn ${str} ${tip_force}
+			return
+		fi
 	fi
 	
 	log "${msg_log_start//CLIENT/${client}}" && SECONDS=0
@@ -2237,31 +2289,30 @@ update_relayer(){
 	else
 		cd $REPO
 		git fetch --all
-		git reset --hard origin/master
+		git reset --hard origin/${branch}
 		git clean -fd
 	fi
 	
-	local oRELAYER_TAG=$RELAYER_TAG
-	export RELAYER_TAG=${tag}
-	git checkout tags/$RELAYER_TAG
+	export RELAYER_TAG=$RELAYER_TAG
+	git checkout ${tags}/$RELAYER_TAG
 	git submodule update --init --recursive
 	cargo b --release # build
 	
 	# make install
-	relayer=${relayer//$oRELAYER_TAG/$RELAYER_TAG}
-	mkdir -p ${relayer%/*}
-	cp -u $REPO/target/release/jito-transaction-relayer ${relayer}
+	mkdir -p $TARGET
+	cp -au $REPO/target/release/jito-transaction-relayer $TARGET
 	
-	# update the systemd unit file with the version tag
-	# no need to call set_bin as `relayer` is updated above
-	local f=${tool%/*}/${moniker%%[-]*}/${relayerd}.service
-	sed -i --follow-symlinks "s/$oRELAYER_TAG/$RELAYER_TAG/" ${f} && ok
+	# set new active_release
+	symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
+	
+	# update the systemd unit file with the new tag
+	save_tag $RELAYER_TAG 'TAG' ${relayerd} && set_bin && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && relayer_running && restart_relayer || :
 	
-	unset REPO
+	unset REPO TARGET
 }
 # END jito-relayer
 
