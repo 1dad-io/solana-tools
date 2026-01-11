@@ -1930,7 +1930,6 @@ update(){
 		export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 	else
 		# build from source
-		PATCH_BUILD=0
 		REPO=${tool%/*}/${repo}
 		
 		get_pkg curl git
@@ -1962,17 +1961,18 @@ update(){
 		
 		# apply patches
 		find_conf(){ find -L $1 -maxdepth 1 -type f -name '*mostly*' ! -name '*~' | sort | head -n 1; }
-		local p=${tool%/*}/solana-patch/$TAG
+		PATCH=${tool%/*}/solana-patch
+		PATCH_BUILD=0
 		git=${git_solana_patch}
 		if [ -n "${git}" ]; then
-			if [ ! -d "${p%/*}/.git" ]; then
+			if [ ! -d "$PATCH/.git" ]; then
 				git -C ${tool%/*} clone ${git}
 			else
 				# find the patch config
-				local f=$(find_conf ${p%/*})
+				local f=$(find_conf $PATCH)
 				
-				# update the repo
-				cd ${p%/*}
+				# update the patch repo
+				cd $PATCH
 				git fetch origin
 				git reset --hard origin/master
 				git clean -fd
@@ -1980,11 +1980,12 @@ update(){
 				
 				# remove the patch config if it was missing before update
 				if [ -z "${f}" ]; then
-					f=$(find_conf ${p%/*})
+					f=$(find_conf $PATCH)
 					rm -fv ${f}
 				fi
 			fi
 		fi
+		local p=$PATCH/$TAG
 		if [ -d "${p}" ]; then
 			find -L ${p} -type f -name '*.rs' | while read f; do
 				local t=$REPO${f//${p}/}
@@ -2018,7 +2019,7 @@ update(){
 	# restart when called from the CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 	
-	unset PATCH_BUILD REPO TARGET
+	unset PATCH PATCH_BUILD REPO TARGET
 }
 # END update
 
