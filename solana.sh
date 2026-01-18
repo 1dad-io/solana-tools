@@ -425,12 +425,6 @@ while test $# -gt 0; do
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		commission_bps=${commission_bps:-$(opt_val "$1")}
 		shift;;
-	--bam-url*)
-		opt=$1
-		if ! grep -q '=' <<< "$1"; then shift; fi
-		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
-		bam_url=${bam_url:-$(opt_val "$1")}
-		shift;;
 	--block-engine-url*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
@@ -442,6 +436,12 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		relayer_url=${relayer_url:-$(opt_val "$1")}
+		shift;;
+	--bam-url*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		bam_url=${bam_url:-$(opt_val "$1")}
 		shift;;
 	--shred-receiver-address*)
 		opt=$1
@@ -483,6 +483,12 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		target_slot_adjustment_ms=${target_slot_adjustment_ms:-$(opt_val "$1")}
+		shift;;
+	--client-mode*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		client_mode=${client_mode:-$(opt_val "$1")}
 		shift;;
 	# overrides END
 	--) # the end of the options
@@ -2164,17 +2170,14 @@ rakurai_status(){
 # END rakurai
 
 # BEGIN jito-solana
-jito_enabled(){ is_tag $TAG jito; }
+jito_enabled(){ is_tag $TAG jito || rakurai_enabled; }
 jito_reload(){
-	jito_enabled || rakurai_enabled || error ${err_version}
+	jito_enabled || error ${err_version}
 	is_running   || error ${err_not_allowed//COND/running}
 	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
 	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
-	if rakurai_enabled; then
-		${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
-	else
-		${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
-	fi
+	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
+	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
 	ok ${msg_pkg_configured//PKG/jito}
 }
 # END jito-solana
@@ -3893,7 +3896,7 @@ validator(){
 		[ "${status}" != 1 ] && restart_relayer
 	fi
 	
-	# add args from the CLI: flags, options, jito stuff
+	# add args from the CLI: flags, options, jito, rakurai
 	local args=()
 	
 	# flags [01], options
@@ -3948,26 +3951,26 @@ validator(){
 		[ -n "${commission_bps}" ]         && args+=("--commission-bps ${commission_bps}")
 		[ -n "${block_engine_url}" ]       && args+=("--block-engine-url ${block_engine_url}")
 		[ -n "${relayer_url}" ]            && args+=("--relayer-url ${relayer_url}")
-		[ -n "${shred_receiver_address}" ] && args+=("--shred-receiver-address ${shred_receiver_address}")
-	elif rakurai_enabled; then
-		# jito-bam
-		[ -n "${commission_bps}" ]         && args+=("--commission-bps ${commission_bps}")
 		[ -n "${bam_url}" ]                && args+=("--bam-url ${bam_url}")
-		[ -n "${block_engine_url}" ]       && args+=("--block-engine-url ${block_engine_url}")
 		[ -n "${shred_receiver_address}" ] && args+=("--shred-receiver-address ${shred_receiver_address}")
-		# rakurai
-		[ -n "${rewards_merkle_root_authority}" ]  && args+=("--rewards-merkle-root-authority ${rewards_merkle_root_authority}")
-		[ -n "${rakurai_activation_program_id}" ]  && args+=("--rakurai-activation-program-id ${rakurai_activation_program_id}")
-		[ -n "${reward_distribution_program_id}" ] && args+=("--reward-distribution-program-id ${reward_distribution_program_id}")
-		[ -n "${banking_packet_delay_ms}" ]        && args+=("--banking-packet-delay-ms ${banking_packet_delay_ms}")
-		[ -n "${target_slot_adjustment_ms}" ]      && args+=("--target-slot-adjustment-ms ${target_slot_adjustment_ms}")
 	fi
+	
 	# jito-relayer
 	# check if relayer is enabled and required by the systemd unit file
 	if [ -f "${relayer}" ] && relayer_required; then
 		add_account_index 'program-id'
 		add_account_index_key 'AddressLookupTab1e1111111111111111111111111'
 		[ -n "${trust_relayer_packets}" ] && args+=("--trust-relayer-packets")
+	fi
+	
+	# rakurai
+	if rakurai_enabled; then
+		[ -n "${rewards_merkle_root_authority}" ]  && args+=("--rewards-merkle-root-authority ${rewards_merkle_root_authority}")
+		[ -n "${rakurai_activation_program_id}" ]  && args+=("--rakurai-activation-program-id ${rakurai_activation_program_id}")
+		[ -n "${reward_distribution_program_id}" ] && args+=("--reward-distribution-program-id ${reward_distribution_program_id}")
+		[ -n "${banking_packet_delay_ms}" ]        && args+=("--banking-packet-delay-ms ${banking_packet_delay_ms}")
+		[ -n "${target_slot_adjustment_ms}" ]      && args+=("--target-slot-adjustment-ms ${target_slot_adjustment_ms}")
+		[ -n "${client_mode}" ]                    && args+=("--client-mode ${client_mode}")
 	fi
 	
 	# fixed a bug: The validator's identity pubkey cannot be a --known-validator
