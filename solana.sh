@@ -1877,13 +1877,13 @@ update(){
 	local url=${url_anza}
 	local repo=validator
 	set_git(){
-		if jito_enabled; then
-			git=${git_jito_solana}
-			url=${url_jito}
-		elif rakurai_enabled; then
+		if rakurai_enabled; then
 			branch=main
 			tags=release
 			git=${git_rakurai}
+		elif jito_enabled; then
+			git=${git_jito_solana}
+			url=${url_jito}
 		fi
 		[ -n "${git}" ] && repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	}; set_git
