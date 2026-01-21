@@ -25,9 +25,11 @@ Environment=TAG=v3.1.6-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
+Environment="BAM_URL=http://dallas.testnet.bam.jito.wtf"
 # [New York]
 # Environment="BLOCK_ENGINE_URL=https://ny.testnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=64.130.35.224:1002"
+# Environment="BAM_URL=http://ny.testnet.bam.jito.wtf"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
@@ -68,7 +70,8 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--merkle-root-upload-authority 7T4inmPmtNBX3MhLwJ9hFsSMnGJYYkKioVABSNTWVRuS \
 	--commission-bps 800 \
 	--block-engine-url ${BLOCK_ENGINE_URL} \
-	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
+	--shred-receiver-address ${SHRED_RECEIVER_ADDR} \
+	--bam-url ${BAM_URL}
 ExecReload=/bin/kill -s HUP $MAINPID
 ExecStop=/bin/kill -s QUIT $MAINPID
 

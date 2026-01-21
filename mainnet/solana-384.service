@@ -14,31 +14,39 @@ RestartSec=1
 LimitNOFILE=2000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
-Environment=TAG=v3.0.10-jito
+Environment=TAG=v3.0.14-jito
 # [Amsterdam]
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=74.118.140.240:1002"
+# Environment="BAM_URL=http://amsterdam.mainnet.bam.jito.wtf"
 # [Dublin]
 # Environment="BLOCK_ENGINE_URL=https://dublin.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=64.130.61.8:1002"
+# Environment="BAM_URL="
 # [Frankfurt]
 # Environment="BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=64.130.50.14:1002"
+# Environment="BAM_URL=http://frankfurt.mainnet.bam.jito.wtf"
 # [London]
 # Environment="BLOCK_ENGINE_URL=https://london.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=142.91.127.175:1002"
+# Environment="BAM_URL=http://london.mainnet.bam.jito.wtf"
 # [New York]
 Environment="BLOCK_ENGINE_URL=https://ny.mainnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.216.96:1002"
+Environment="BAM_URL=http://ny.mainnet.bam.jito.wtf"
 # [Salt Lake City]
 # Environment="BLOCK_ENGINE_URL=https://slc.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=64.130.53.8:1002"
+# Environment="BAM_URL=http://slc.mainnet.bam.jito.wtf"
 # [Singapore]
 # Environment="BLOCK_ENGINE_URL=https://singapore.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=202.8.11.224:1002"
+# Environment="BAM_URL=http://singapore.mainnet.bam.jito.wtf"
 # [Tokyo]
 # Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=202.8.9.160:1002"
+# Environment="BAM_URL=http://tokyo.mainnet.bam.jito.wtf"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/data/tower \
@@ -81,7 +89,8 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--merkle-root-upload-authority 8F4jGUmxF36vQ6yabnsxX6AQVXdKBhs8kGSUuRKSg8Xt \
 	--commission-bps 800 \
 	--block-engine-url ${BLOCK_ENGINE_URL} \
-	--shred-receiver-address ${SHRED_RECEIVER_ADDR}
+	--shred-receiver-address ${SHRED_RECEIVER_ADDR} \
+	--bam-url ${BAM_URL}
 ExecReload=/bin/kill -s HUP $MAINPID
 ExecStop=/bin/kill -s QUIT $MAINPID
 
