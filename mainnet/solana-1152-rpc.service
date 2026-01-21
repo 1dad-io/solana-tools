@@ -51,7 +51,7 @@ WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/ramdisk/tower \
 	--ledger /mnt/ramdisk/ledger \
-	--accounts /mnt/ramdisk/accounts \
+	--accounts /mnt/acct/accounts \
 	--accounts-index-path /mnt/ramdisk/accounts_index \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
