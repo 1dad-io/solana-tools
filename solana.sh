@@ -2928,7 +2928,6 @@ make_snapshot(){
 	# add args from the systemd unit file
 	local args=()
 	[ -n "${accounts}" ]       && args+=("--accounts ${accounts}")
-	[ -n "${accounts_index}" ] && args+=("--accounts-index-path ${accounts_index}")
 	[ -n "${snapshots}" ]      && args+=("--snapshots ${snapshots}")
 	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
 	
