@@ -2617,9 +2617,25 @@ setup(){
 			yes | sudo ufw delete ${any//allow/limit}
 		fi
 		
+		# allow solana_ws
+		# NOTE: `private_rpc` is a runtime arg and cannot be used here
+		yes | sudo ufw delete allow 8900/tcp # delete solana_websocket (transient fix)
+		local ws_port=$((${rpc_port:-0}+1))
+		local any="allow ${ws_port}/tcp"
+		if [ -z "${setup_ufw_ws}" ]; then
+			sudo ufw ${any} comment 'solana_ws'
+		else
+			local ips=(`echo ${setup_ufw_ws} | tr ',' "\n"`) ip
+			for ip in "${ips[@]}"; do
+				is_ip ${ip} || is_cidr ${ip} || continue
+				sudo ufw allow from ${ip} to any port ${ws_port} proto tcp comment 'solana_ws'
+			done
+			yes | sudo ufw delete ${any}
+			yes | sudo ufw delete ${any//allow/limit}
+		fi
+		
 		# allow solana_*
 		sudo ufw allow 8000/tcp      comment 'solana_gossip'
-		sudo ufw allow 8900/tcp      comment 'solana_websocket'
 		sudo ufw allow 8000:8025/udp comment 'solana_dynamic'
 		
 		# allow jito-relayer
