@@ -49,8 +49,8 @@ Environment="BAM_URL=http://ny.mainnet.bam.jito.wtf"
 # Environment="BAM_URL=http://tokyo.mainnet.bam.jito.wtf"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
-	--tower /mnt/ramdisk/tower \
-	--ledger /mnt/ramdisk/ledger \
+	--tower /mnt/data/tower \
+	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
@@ -80,12 +80,13 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
-	--limit-ledger-size 50000000 \
+	--limit-ledger-size \
 	--no-poh-speed-test \
 	--no-port-check \
 	--account-index program-id \
 	--account-index spl-token-owner \
 	--account-index spl-token-mint \
+	--enable-rpc-transaction-history \
 	--tip-payment-program-pubkey T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt \
 	--tip-distribution-program-pubkey 4R3gSG8BpU4t19KYj8CfnbtRpnT8gtk4dvTHxVRwc2r7 \
 	--merkle-root-upload-authority 8F4jGUmxF36vQ6yabnsxX6AQVXdKBhs8kGSUuRKSg8Xt \
