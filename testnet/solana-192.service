@@ -21,7 +21,7 @@ LimitNOFILE=2000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v3.1.6-jito
+Environment=TAG=v3.1.8-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
