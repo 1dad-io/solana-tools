@@ -2174,10 +2174,10 @@ jito_enabled(){ is_tag $TAG jito || rakurai_enabled; }
 jito_reload(){
 	jito_enabled || error ${err_version}
 	is_running   || error ${err_not_allowed//COND/running}
-	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
-	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
-	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
-	${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
+	[ -n "${block_engine_url}" ]       && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
+	[ -n "${shred_receiver_address}" ] && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
+	[ -n "${relayer_url}" ]            && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
+	[ -n "${bam_url}" ]                && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
 	ok ${msg_pkg_configured//PKG/jito}
 }
 # END jito-solana
