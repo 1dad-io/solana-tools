@@ -1497,7 +1497,7 @@ menu_useradd(){
 	done
 	user=$REPLY
 	
-	# check if a user exist
+	# check if user exists
 	grep -q "${user}" /etc/passwd
 	if [ $? -eq 0 ]; then
 		menu_ok "${msg_user_exists//USER/${user}}"
@@ -3155,12 +3155,14 @@ txtower(){
 	[ -s "${staked}" ]     || error ${err_file_read//FILE/${staked}}
 	[ -s "${unstaked}" ]   || error ${err_file_read//FILE/${unstaked}}
 	
+	is_staked || error ${err_transitioned}
+	
+	# check if the remote unstaked validator is healthy
 	local bindip=${ssh_host}
 	local alias=$(mkalias ${ssh_bind})
 	local errmsg=${err_rpc_health//PUBKEY/${alias}}
-	# check if `bindip` is overridden by an argument
 	if [ -n "$1" ]; then
-		bindip=$1
+		bindip=$1 # overridden by the function argument
 		if [ "${bindip}" == N ]; then
 			error ${errmsg}
 		elif is_num ${bindip}; then
@@ -3173,29 +3175,17 @@ txtower(){
 		[ "${force}" == 1 ] && warn ${errmsg} ${tip_forced} || error ${errmsg} ${tip_force}
 	fi
 	
-	# do some error checking first
+	# check if the tower file exists
 	local pub=`${keygen} pubkey ${staked}`
 	local f=${tower}/tower-{,1_9-}${pub}.bin
 	[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}}
-	
-	# 20241028: fixed a bug allowing to txtower from the unstaked
-	# validator; the error check below doesn't work anymore since
-	# we stopped gossiping for `bindip` by `ssh_bind` (a pubkey).
-	# local wanip; wanip=$(get_wanip) || error ${err_wanip}
-	# [ "${wanip}" == "${bindip}" ] && error ${err_transitioned}
-	#
-	# TODO: revert to the previous logic by making is_staked() to
-	# first check with the gossip via the local RPC, falling back
-	# to the public RPC if the local one is unavailable
-	is_staked || error ${err_transitioned}
 	
 	# make up commands
 	local ssh_tower=`${cmd_ssh} -p ${ssh_port} ${ssh_user}@${bindip} ${ssh_tool} export tower`
 	[ -z "${ssh_tower}" ] && error ${err_tower_get}
 	local cmd_tx="${cmd_scp} -P ${ssh_port} ${tower}/tower*-${pub}.bin ${ssh_user}@${bindip}:${ssh_tower}"
 	local cmd_rx="${cmd_ssh} -p ${ssh_port} ${ssh_user}@${bindip} ${ssh_tool} rxtower"
-	# firedancer
-	if fd_enabled && [ -f "${fdctl}" ]; then
+	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
@@ -3210,21 +3200,17 @@ txtower(){
 	fi
 	[ "${force}" == 1 ] && cmd_rx+=' --force'
 	
-	# double the default min_idle_time for the validator to catch-up when
-	# idle if restarted on the occasion of the failed identity transition
-	# [ "${min_idle_time}" -lt 20 ] && min_idle_time=20 (not in use)
-	local time=${min_idle_time}
-	
-	# for the same reason, FS trim must be disabled for a fast catch-up
+	# run the transition
+	# set-identity is run after ln here because it can potentionally fail
+	# and trigger the validator restart with the staked identity, and for
+	# this reason, FS trim should also be disabled for a quick catch-up
 	${sudo} touch ${trimmed}
 	
-	# run the transition
-	# set-identity is called after ln because it could fail on occasion
-	# and trigger the validator to be restarted with the staked identity
 	local remote="${bindip}:${ssh_tower}"
 	local res str status=0 slots=${tower_slot_delay} delay=${tower_delay}
 	[ -z "${now}" ] && info ${msg_restart_window}
-	wait4r ${time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
+	wait4r ${min_idle_time} \
+	&& log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`${cmd_tx} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_prepare//REMOTE/${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
@@ -3249,8 +3235,7 @@ rxtower(){
 	local pub=`${keygen} pubkey ${staked}`
 	local f=${tower}/tower-{,1_9-}${pub}.bin
 	local cmd_rm="${cmd_exec} rm -fv ${f}"
-	# firedancer
-	if fd_enabled && [ -f "${fdctl}" ]; then
+	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
@@ -3263,7 +3248,7 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# do some error checking first
+	# check if the tower file exists and isn't outdated
 	if [ ! -s "${f}" ]; then
 		local str=${err_tower_missing//FILE/${f}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
@@ -3284,13 +3269,12 @@ rxtower(){
 		fi
 	fi
 	
-	# FS trim must be disabled for the validator to catch-up faster
-	# if restarted on the occasion of the failed identity transition
+	# run the transition
+	# set-identity is run after ln here because it can potentionally fail
+	# and trigger the validator restart with the unstaked identity, and for
+	# this reason, FS trim should also be disabled for a quick catch-up
 	${sudo} touch ${trimmed}
 	
-	# run the transition
-	# set-identity is called after ln because it could fail on occasion
-	# and trigger the validator to be restarted with the unstaked identity
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
 	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
@@ -3300,7 +3284,7 @@ rxtower(){
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
-# simplified version of txtower() without tower file manipulation
+# simplified version of txtower() without the tower file transfer
 vote_off(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to stop voting
@@ -3309,8 +3293,7 @@ vote_off(){
 	[ -s "${unstaked}" ]   || error ${err_file_read//FILE/${unstaked}}
 	
 	# make up commands
-	# firedancer
-	if fd_enabled && [ -f "${fdctl}" ]; then
+	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
@@ -3323,13 +3306,12 @@ vote_off(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# FS trim must be disabled for the validator to catch-up faster
-	# if restarted on the occasion of the failed identity transition
+	# run the transition
+	# set-identity is run after ln here because it can potentionally fail
+	# and trigger the validator restart with the staked identity, and for
+	# this reason, FS trim should also be disabled for a quick catch-up
 	${sudo} touch ${trimmed}
 	
-	# run the transition
-	# set-identity is called after ln because it could fail on occasion
-	# and trigger the validator to be restarted with the staked identity
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
@@ -3580,7 +3562,7 @@ watchdog(){
 	# the validators can determine its superior status.
 	
 	# Part 3: run the failover action based on the collected data
-	local res failed=N status=0
+	local failed res= status=0
 	
 	# event codes
 	local E_BINDIP=bindip
@@ -3604,7 +3586,8 @@ watchdog(){
 	
 	is_ok(){ [ ${status} -eq 0 ]; }
 	if [ "${ready}" == Y ] && is_staked; then
-		# SELF-DETECTED (2a-f)
+		# 2. SELF-DETECTED
+		failed=N
 		tip_seen=${tip_seen//LIMIT/${failures}}
 		# 2a: reboot (while staked)
 		if [ -f "${wd_boot}" ]; then
@@ -3612,7 +3595,6 @@ watchdog(){
 			warn ${err_rebooted}
 			if [ -n "${ssh_host}" ]; then
 				res=$(vote_off) || status=1 # allowed to fail
-				echo "${res}"
 				is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}
 			else
 				log "${err_bind}"
@@ -3624,7 +3606,6 @@ watchdog(){
 			warn ${err_restarted}
 			if [ -n "${ssh_host}" ]; then
 				res=$(vote_off) || status=1 # allowed to fail
-				echo "${res}"
 				is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}
 			else
 				log "${err_bind}"
@@ -3637,7 +3618,6 @@ watchdog(){
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					res=$(vote_off) || status=1 # may but shouldn't fail
-					echo "${res}"
 					is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3655,7 +3635,6 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while the RPC is down
 					res=$(txtower ${bindip}) || status=1 # no failures accepted
-					echo "${res}"
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3679,7 +3658,6 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while the RPC is down
 					res=$(txtower ${bindip}) || status=1 # no failures accepted
-					echo "${res}"
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3696,7 +3674,6 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while delinquent
 					res=$(txtower ${bindip}) || status=1 # no failures accepted
-					echo "${res}"
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3708,8 +3685,8 @@ watchdog(){
 			# `bindip` is set => `ssh_host` is configured
 			set_event $E_BINDIP
 			local alias=$(mkalias ${ssh_bind})
-			# reporting `behind` here is disabled, since it's now reported
-			# by the unstaked node itself while caching up with the cluster
+			# reporting `behind` here is disabled, since it's now reported by
+			# the unstaked validator itself while caching up with the cluster
 			if false && is_num ${bindip}; then
 				local str=${err_rpc_behind//PUBKEY/${alias}}
 				warn ${str//SLOTS/${bindip}}
@@ -3718,8 +3695,9 @@ watchdog(){
 			fi
 		fi
 	elif [ "${ready}" == Y ]; then
-		# REMOTELY-DETECTED (3a-e)
-		failures=$(($failures+$failures_offset)) # be late by `failures_offset`
+		# 3. REMOTELY-DETECTED
+		failed=N
+		failures=$(($failures+$failures_offset))
 		tip_seen=${tip_seen//LIMIT/${failures}}
 		# 3a: reboot (do nothing)
 		if [ -f "${wd_boot}" ]; then
@@ -3751,23 +3729,28 @@ watchdog(){
 			if [ "${times}" -ge "${failures}" ]; then
 				SMS=y
 				res=$(vote_on) || status=1 # may but shouldn't fail
-				echo "${res}"
 				is_ok && ok ${msg_vote_on} || warn ${msg_vote_on} ${tip_errors}
 			fi
 			SMS=y
 		fi
 	fi
 	
+	# check if we failed over
+	if [ "${failed}" == Y -a -n "${res}" ]; then
+		ready=R # do a ready check
+		unset SMS; info ${msg_wd_disabled_recheck}; SMS=y
+	fi
+	
 	# save the failover state
 	if [ "${failed}" == Y -a "${times}" -eq 1 ]; then stamp=`date +%s`; fi
 	if [ "${failed}" == N -a "${times}" -gt 0 ]; then
-		# OK now, but FAILED the last time it was run
+		# OK now, but FAILED the last time we checked
 		
 		local str=${msg_all_clear}
 		
 		# we can also track network status changes by touching a file
 		# on going offline for the 1st time, and deleting it when we're
-		# back online again with a subsequent notification sent by SMS
+		# back online again, with a subsequent notification sent by SMS
 		[ "${event}" == $E_OFFLINE ] && str=${msg_network}
 		
 		local ctime=${stamp} # last seen
@@ -3775,8 +3758,6 @@ watchdog(){
 		ok ${str//TIME/$(elapsed $cdiff)}
 		
 		times=0 # all clear
-		ready=R # do a ready check
-		unset SMS; info ${msg_wd_disabled_recheck}; SMS=y
 	fi
 	save_wd
 	
