@@ -196,7 +196,8 @@ read_conf(){
 	ssh_user=${ssh_user:-root}
 	ssh_tool=${ssh_tool:-${tool}}
 	failures=${failures:-1}
-	failures_offset=${failures_offset:-1}
+	failures_offset=${failures_offset:-1} # to be deprecated
+	cooldown=${cooldown:-3}
 	
 	# airdrop & rebalance
 	airdrop_min=${airdrop_min:-1}
@@ -3374,10 +3375,8 @@ watchdog(){
 	
 	# get the latest failover state
 	local stamp stake event times ready
-	init_wd(){ stamp=; stake=; event=; times=0; ready=N; }
+	init_wd(){ stamp=; stake=; event=; times=0; ready=N; }; init_wd
 	save_wd(){ echo "${stamp}:${stake}:${event}:${times}:${1:-${ready}}" | ${sudo} tee ${wd_data} >/dev/null; }
-	
-	init_wd
 	# read_wd() is below
 	if [ -f "${wd_data}" ]; then
 		local str=$(<${wd_data})
@@ -3387,13 +3386,14 @@ watchdog(){
 			stake=${arr[1]} # staked/unstaked
 			event=${arr[2]} # bindip/delinq/norpc/offline/reboot/restart
 			times=${arr[3]} # number of consecutive failures
-			ready=${arr[4]} # Y=yes/N=no/R=readycheck/D=disabled
+			ready=${arr[4]} # Y=yes/N=no/R=readycheck/C=cooldown/D=disabled
 			# to better understand the meaning of $ready, imagine we have
 			# a traffic light with Red=No, Yellow=Get-ready and Green=Yes
 		fi
 	fi
 	
 	# process the subcommand
+	local rpc_host=localhost
 	unset LOG
 	case "$1" in
 	off)
@@ -3411,11 +3411,14 @@ watchdog(){
 		case ${ready} in
 		D) info ${msg_wd_disabled};;
 		R) info ${msg_wd_disabled_recheck};;
+		C) info ${msg_wd_disabled_cooldown};;
 		*) info ${msg_wd_enabled};;
 		esac
 		return 0;;
 	*)
-		[ -n "$1" ] && error ${err_arg};;
+		if [ -n "$1" ]; then
+			is_ip "$1" && rpc_host=$1 || error ${err_arg}
+		fi;;
 	esac
 	LOG=y
 	
@@ -3430,7 +3433,7 @@ watchdog(){
 		if is_main; then
 			# determine if we're ok by querying the getHealth RPC method
 			local rpc=N
-			local res=$(json_rpc 'localhost' 'getHealth')
+			local res=$(json_rpc ${rpc_host} 'getHealth')
 			if [ "${res}" == 'ok' ]; then
 				rpc=Y
 			elif [[ "${res}" == *'code'* ]]; then # error
@@ -3525,6 +3528,18 @@ watchdog(){
 				R) # readycheck
 					unset SMS; info ${msg_wd_enabled_recheck}
 					ready=Y;;
+				C) # cooldown
+					if [ "${times}" -ge 0 ]; then
+						info ${msg_wd_enabled_cooldown}
+						ready=Y
+					else
+						unset SMS
+						local abs=$((-${times}))
+						local str=${msg_cooldown}
+						[ "${abs}" -eq 1 ] && str=${msg_cooldown1}
+						info ${str//TIMES/${abs}}
+						times=$((${times}+1))
+					fi;;
 				N) # not ready: `wd_data` init, or attended restart
 					info ${msg_wd_enabled}
 					ready=Y;;
@@ -3552,7 +3567,7 @@ watchdog(){
 			unset LOG; info ${msg_wd_ready//TIME/${elapsed}}; LOG=y
 		fi
 	elif [ "${ready}" != D -a -f "${wd_boot}" ]; then
-		ready=Y; SMS=y # get ready for the reboot
+		ready=Y; SMS=y # enable processing of 2a: reboot
 	fi
 	
 	# NOTE: shouldn't we automatically switch back from the remote
@@ -3673,7 +3688,8 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while delinquent
-					res=$(txtower ${bindip}) || status=1 # no failures accepted
+#					res=$(txtower ${bindip}) || status=1 # no failures accepted
+					res=$(vote_off) || status=1 # may but shouldn't fail
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3757,7 +3773,11 @@ watchdog(){
 		local cdiff=$(($(date +%s)-$ctime))
 		ok ${str//TIME/$(elapsed $cdiff)}
 		
-		times=0 # all clear
+		if [ "${cooldown}" -gt 0 ]; then
+			times=$((-${cooldown}))
+			ready=C # cool it down
+			unset SMS; info ${msg_wd_disabled_cooldown}; SMS=y
+		fi
 	fi
 	save_wd
 	
