@@ -3383,14 +3383,12 @@ watchdog(){
 		local str=$(<${wd_data})
 		IFS=':'; local arr=(${str}); unset IFS
 		if [ ${#arr[@]} -eq 5 ]; then
-			stamp=${arr[0]} # last seen unix timestamp
-			stake=${arr[1]} # staked/unstaked
-			event=${arr[2]} # bindip/delinq/norpc/offline/reboot/restart
-			times=${arr[3]} # number of consecutive failures
-			ready=${arr[4]} # Y=yes/N=no/R=readycheck/C=cooldown/D=disabled
-			# to better understand the meaning of $ready, imagine we have
-			# a traffic light with Red=No, Yellow=Get-ready and Green=Yes
-		fi
+			stamp=${arr[0]} # [0-9] last seen unix timestamp
+			stake=${arr[1]} # staked,unstaked
+			event=${arr[2]} # bindip,delinq,norpc,offline,reboot,restart
+			times=${arr[3]} # [0-9] the number of consecutive failures
+			ready=${arr[4]} # D=disabled,N=no,R=readycheck,Y=yes,[0-9]=cooldown
+		fi 
 	fi
 	
 	# process the subcommand
@@ -3412,8 +3410,7 @@ watchdog(){
 		case ${ready} in
 		D) info ${msg_wd_disabled};;
 		R) info ${msg_wd_disabled_recheck};;
-		C) info ${msg_wd_disabled_cooldown};;
-		*) info ${msg_wd_enabled};;
+		*) is_num "${ready}" && info ${msg_wd_disabled_cooldown} || info ${msg_wd_enabled};;
 		esac
 		return 0;;
 	*)
@@ -3526,24 +3523,19 @@ watchdog(){
 				case ${ready} in
 				D) # disabled
 					info ${msg_wd_disabled};;
-				R) # readycheck
-					unset SMS; info ${msg_wd_enabled_recheck}
-					ready=Y;;
-				C) # cooldown
-					if [ "${times}" -ge 0 ]; then
-						info ${msg_wd_enabled_cooldown}
-						ready=Y
-					else
-						unset SMS
-						local abs=$((-${times}))
-						local str=${msg_cooldown}
-						[ "${abs}" -eq 1 ] && str=${msg_cooldown1}
-						info ${str//TIMES/${abs}}
-						times=$((${times}+1))
-					fi;;
 				N) # not ready: `wd_data` init, or attended restart
 					info ${msg_wd_enabled}
 					ready=Y;;
+				R) # readycheck
+					unset SMS; info ${msg_wd_enabled_recheck}
+					ready=Y;;
+				*) # cooldown
+					if [ "${ready}" -eq 1 ]; then
+						info ${msg_wd_enabled_cooldown}
+						ready=Y
+					elif is_num "${ready}"; then
+						ready=$(($ready-1))
+					fi;;
 				esac
 				cleanup
 			fi
@@ -3630,7 +3622,7 @@ watchdog(){
 		elif is_offline; then
 			unset SMS # no SMS can be sent while offline
 			set_event $E_OFFLINE
-			warn ${err_network} ${tip_seen//TIMES/$times}
+			warn ${err_network} ${tip_seen//TIMES/${times}}
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					res=$(vote_off) || status=1 # may but shouldn't fail
@@ -3645,7 +3637,7 @@ watchdog(){
 		elif false && [ "${rpc}" == N ]; then
 			set_event $E_NO_RPC
 			[ "${times}" -gt "${failures}" ] && unset SMS # don't spam
-			warn ${err_rpc} ${tip_seen//TIMES/$times}
+			warn ${err_rpc} ${tip_seen//TIMES/${times}}
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
@@ -3664,10 +3656,10 @@ watchdog(){
 			set_event $E_NO_RPC
 			if is_num ${rpc}; then
 				local str=${err_rpc_behind//PUBKEY/$SENDER}
-				warn ${str//SLOTS/${rpc}} ${tip_seen//TIMES/$times}
+				warn ${str//SLOTS/${rpc}} ${tip_seen//TIMES/${times}}
 			else
 				[ "${times}" -gt "${failures}" ] && unset SMS # don't spam
-				warn ${err_rpc} ${tip_seen//TIMES/$times}
+				warn ${err_rpc} ${tip_seen//TIMES/${times}}
 			fi
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
@@ -3684,7 +3676,7 @@ watchdog(){
 		elif [ "${delinquent}" == Y ]; then
 			set_event $E_DELINQ
 			[ "${times}" -gt "${failures}" ] && unset SMS # don't spam
-			warn ${err_delinquent} ${tip_seen//TIMES/$times}
+			warn ${err_delinquent} ${tip_seen//TIMES/${times}}
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
@@ -3742,7 +3734,7 @@ watchdog(){
 		elif [ "${delinquent}" == Y ]; then
 			set_event $E_DELINQ
 			[ "${times}" -gt "${failures}" ] && unset SMS # don't spam
-			warn ${err_delinquent} ${tip_seen//TIMES/$times}
+			warn ${err_delinquent} ${tip_seen//TIMES/${times}}
 			if [ "${times}" -ge "${failures}" ]; then
 				SMS=y
 				res=$(vote_on) || status=1 # may but shouldn't fail
@@ -3774,9 +3766,9 @@ watchdog(){
 		local cdiff=$(($(date +%s)-$ctime))
 		ok ${str//TIME/$(elapsed $cdiff)}
 		
+		times=0 # all clear
 		if [ "${cooldown}" -gt 0 ]; then
-			times=$((-${cooldown}))
-			ready=C # cool it down
+			ready=${cooldown}
 			unset SMS; info ${msg_wd_disabled_cooldown}; SMS=y
 		fi
 	fi
