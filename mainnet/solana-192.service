@@ -52,6 +52,8 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/data/tower \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
+	--accounts-index-path /mnt/acct/accounts_index \
+	--enable-accounts-disk-index \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \

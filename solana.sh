@@ -581,7 +581,7 @@ read_systemd(){
 	ledger=$(get_opt 'ledger')
 	tower=$(get_opt 'tower' ${ledger})
 	accounts=$(get_opt 'accounts' "${ledger}/accounts")
-	accounts_index=$(get_opt 'accounts-index-path' "${ledger}/accounts_index")
+	accounts_index=$(get_opt 'accounts-index-path')
 	accounts_shrink=$(get_opt 'account-shrink-path')
 	snapshots=$(get_opt 'snapshots' ${ledger})
 	snapshots_inc=$(get_opt 'incremental-snapshot-archive-path' ${snapshots})
@@ -2929,6 +2929,7 @@ make_snapshot(){
 	# add args from the systemd unit file
 	local args=()
 	[ -n "${accounts}" ]       && args+=("--accounts ${accounts}")
+	[ -n "${accounts_index}" ] && args+=("--accounts-index-path ${accounts_index}" "--enable-accounts-disk-index")
 	[ -n "${snapshots}" ]      && args+=("--snapshots ${snapshots}")
 	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
 	
