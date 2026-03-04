@@ -205,8 +205,8 @@ read_conf(){
 	
 	# doublezero
 	dz_enabled=${dz_enabled:-0}
-	dz_epoch_offset=${dz_epoch_offset:-1}
-	dz_epoch_progress=${dz_epoch_progress:-90}
+	dz_fees_epoch_offset=${dz_fees_epoch_offset:-1}
+	dz_fees_epoch_progress=${dz_fees_epoch_progress:-90}
 	
 	# logging
 	log_level=${log_level:-info}
@@ -2392,9 +2392,9 @@ pda_fees(){
 	
 	LOG=y
 	
-	# look `dz_epoch_offset` epochs back
+	# look `dz_fees_epoch_offset` epochs back
 	local u=$(if_fun is_running ? localhost : "${rpc_url}")
-	local offset=${1:-${dz_epoch_offset}}
+	local offset=${1:-${dz_fees_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
 	if [ "${epoch}" -gt "${offset}" ]; then
@@ -2490,9 +2490,9 @@ dz(){
 	address|balance|latency|status)
 		${dz} "$1";;
 	up)
-		${dz} connect ibrl;;
+		${dz_up};;
 	down)
-		${dz} disconnect;;
+		${dz_down};;
 	pda)
 		pda_fetch;;
 	fees)
@@ -3973,6 +3973,11 @@ validator(){
 		add_account_index 'program-id'
 		add_account_index_key 'AddressLookupTab1e1111111111111111111111111'
 		[ -n "${trust_relayer_packets}" ] && args+=("--trust-relayer-packets")
+	fi
+	
+	# doublezero
+	if dz_enabled; then
+		[ -n "${dz_shred_receiver_address}" ] && args+=("--shred-receiver-address ${dz_shred_receiver_address}")
 	fi
 	
 	# rakurai
