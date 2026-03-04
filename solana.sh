@@ -2490,9 +2490,9 @@ dz(){
 	address|balance|latency|status)
 		${dz} "$1";;
 	up)
-		${dz_up};;
+		${sudo} bash -c "${dz_up}";;
 	down)
-		${dz_down};;
+		${sudo} bash -c "${dz_down}";;
 	pda)
 		pda_fetch;;
 	fees)
