@@ -78,7 +78,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--snapshot-interval-slots 100 \
 	--full-snapshot-interval-slots 100000 \
 	--maximum-full-snapshots-to-retain 2 \
-	--maximum-incremental-snapshots-to-retain 4 \
+	--maximum-incremental-snapshots-to-retain 2 \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \

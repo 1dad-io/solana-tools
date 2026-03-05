@@ -55,7 +55,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--accounts-index-path /mnt/ramdisk/accounts_index \
 	--enable-accounts-disk-index \
 	--snapshots /mnt/snap/snapshots \
-	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
+	--incremental-snapshot-archive-path /mnt/ramdisk/snapshots_inc \
 	--log /mnt/data/log/solana.log \
 	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-mainnet.json \
@@ -78,7 +78,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--snapshot-interval-slots 100 \
 	--full-snapshot-interval-slots 100000 \
 	--maximum-full-snapshots-to-retain 2 \
-	--maximum-incremental-snapshots-to-retain 4 \
+	--maximum-incremental-snapshots-to-retain 2 \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
