@@ -948,7 +948,7 @@ tx(){
 	local txid=`echo "${resp}" | grep -iw Signature | awk '{print $2}'`
 	local conf=`echo "${resp}" | grep -iw confirm | awk '{print $5}' | tr -cd '[:alnum:]'`
 	
-	# confirm the tx if requested by the CLI
+	# confirm the tx if requested via CLI
 	[ -n "${conf}" -a "${conf}" == "${txid}" ] && resp=`${solana} ${opt} confirm -v ${txid} 2>/dev/null` || resp=
 	[ -n "${resp}" ] && { conf=`echo "${resp}" | grep -m1 -ow confirmed` || conf='processed'; }
 	[ -n "${txid}" ] && info ${txid}$([ -n "${conf}" ] && echo " -> ${conf}")
@@ -1882,14 +1882,17 @@ update(){
 			branch=main
 			tags=release
 			git=${git_rakurai}
+			url=
 		elif jito_enabled; then
+			branch=master
+			tags=tags
 			git=${git_jito_solana}
 			url=${url_jito}
 		fi
 		[ -n "${git}" ] && repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	}; set_git
 	
-	# TAG may be unset, read from the systemd, or provided in the CLI
+	# TAG may be unset, read from the systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2058,7 +2061,7 @@ fd_update(){
 	[ -n "${git}" ] || error ${err_git_repo}
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	
-	# TAG may be unset, read from the systemd, or provided in the CLI
+	# TAG may be unset, read from the systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2237,7 +2240,7 @@ update_relayer(){
 	[ -n "${git}" ] || error ${err_git_repo}
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	
-	# TAG may be unset, read from the systemd, or provided in the CLI
+	# TAG may be unset, read from the systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2716,7 +2719,7 @@ setup(){
 	if [ "${setup_cli}" == 1 ]; then
 		update # run the installer
 		
-		# configure the cli
+		# configure the CLI
 		${solana} config set --url ${url_rpc}
 		
 		# ensure the vote_acc keypair exists
