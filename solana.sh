@@ -3523,6 +3523,7 @@ watchdog(){
 			elif [ "${delinquent}" == Y ]; then
 				info ${msg_delinquent}
 			else
+				local prev_ready=${ready}
 				case ${ready} in
 				D) # disabled
 					info ${msg_wd_disabled};;
@@ -3770,7 +3771,7 @@ watchdog(){
 		ok ${str//TIME/$(elapsed $cdiff)}
 		
 		times=0 # all clear
-		if [ "${cooldown}" -gt 0 ]; then
+		if [ "${prev_ready}" == R -a "${cooldown}" -gt 0 ]; then
 			ready=${cooldown}
 			unset SMS; info ${msg_wd_disabled_cooldown}; SMS=y
 		fi
