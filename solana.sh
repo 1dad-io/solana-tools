@@ -238,7 +238,8 @@ read_conf(){
 	trim_idle_time=${trim_idle_time:-5} # mins
 	
 	# sys-tuner
-	max_files=${max_files:-2000000}
+	nofile=${nofile:-2000000}
+	memlock=${memlock:-2000000}
 	udp_buffer=${udp_buffer:-134217728}
 	swappiness=${swappiness:-1}
 	cache_pressure=${cache_pressure:-50}
@@ -3839,10 +3840,10 @@ net.core.wmem_default = ${udp_buffer}
 net.core.wmem_max = ${udp_buffer}
 
 # Increase memory mapped files limit
-vm.max_map_count = ${max_files}
+vm.max_map_count = ${nofile}
 
 # Increase number of allowed open file descriptors
-fs.nr_open = ${max_files}
+fs.nr_open = ${nofile}
 
 # Adjust the swap settings
 vm.swappiness = ${swappiness}
@@ -3851,20 +3852,15 @@ EOF"
 	sudo sysctl -p /etc/sysctl.d/21-solana-validator.conf
 	
 	# Increase systemd and session file limits
-	
-	# Add LimitNOFILE=${max_files}
-	# to the [Service] section of your systemd service file, if you use one, otherwise add
-	# DefaultLimitNOFILE=${max_files}
-	# to the [Manager] section of /etc/systemd/system.conf, then
-	# sudo systemctl daemon-reload
-	
 	sudo bash -c "cat >/etc/security/limits.d/90-solana-nofiles.conf <<EOF
 # Increase process file descriptor count limit
-* - nofile ${max_files}
+* - nofile ${nofile}
+# Increase memory locked limit (kB)
+* - memlock ${memlock}
 EOF"
 	
 	# set the maximum number of open file descriptors for the shell
-	ulimit -n ${max_files}
+	ulimit -n ${nofile}
 	
 	ok ${msg_sys_tuned}
 }
