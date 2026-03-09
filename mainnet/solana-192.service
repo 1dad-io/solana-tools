@@ -12,9 +12,10 @@ ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair-mainnet.jso
 Restart=on-failure
 RestartSec=1
 LimitNOFILE=2000000
+LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
-Environment=TAG=v3.1.8-rakurai.0
+Environment=TAG=v3.1.9-jito
 # [Amsterdam]
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=74.118.140.240:1002"
