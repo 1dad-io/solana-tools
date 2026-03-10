@@ -17,7 +17,7 @@ ConditionPathExists=/home/ubuntu/solana-tools/keys/validator-keypair-testnet.jso
 [Service]
 Restart=on-failure
 RestartSec=1
-LimitNOFILE=2000000
+LimitNOFILE=1000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
