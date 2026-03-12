@@ -53,10 +53,8 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--tower /mnt/data/tower \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
-	--accounts-index-path /mnt/ramdisk/accounts_index \
-	--enable-accounts-disk-index \
 	--snapshots /mnt/snap/snapshots \
-	--incremental-snapshot-archive-path /mnt/ramdisk/snapshots_inc \
+	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \
 	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-mainnet.json \
