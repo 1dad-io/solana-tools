@@ -248,7 +248,7 @@ read_conf(){
 	# TODO: use n/y instead
 	setup_sshd=${setup_sshd:-1}
 	setup_ufw=${setup_ufw:-1}
-	setup_ufw_quic=${setup_ufw_quic:-1}
+	setup_ufw_before=${setup_ufw_before:-1}
 	setup_f2b=${setup_f2b:-1}
 	setup_sudoers=${setup_sudoers:-1}
 	setup_cli=${setup_cli:-1}
@@ -2568,22 +2568,18 @@ setup(){
 		# TODO: ufw_purge_unlisted # except the current ${client}
 		ufw_purge_unbound
 		
-		# TPU quic handshake rate limiting
+		# apply custom iptables rules that are processed before the main rules
 		local f=/etc/ufw/before.rules
 		local src=${f} res
-		if [ "${setup_ufw_quic}" == 1 ]; then
-			# check if jito-solana is tagged
+		if [ "${setup_ufw_before}" == 1 ]; then
 			if jito_enabled; then
 				if relayer_required; then
 					src+='.jito-relayer'
 				else
-					# useless due to dynamic TPU
-					# src+='.jito-solana'
-					src=${src}
+					src+='.jito-solana'
 				fi
-			# firedancer
 			elif fd_enabled; then
-				src+='.firedancer'
+				: # firedancer not compatible with iptables (ufw)
 			else
 				src+='.agave'
 			fi

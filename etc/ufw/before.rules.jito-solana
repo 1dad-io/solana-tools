@@ -8,6 +8,17 @@
 #   ufw-before-forward
 #
 
+#
+# solana-tools
+#
+# disable connection tracking for UDP to reduce the attack surface
+*raw
+:PREROUTING ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+-A PREROUTING -p udp --dport 8000:8025 -j NOTRACK
+-A OUTPUT     -p udp --sport 8000:8025 -j NOTRACK
+COMMIT
+
 # Don't delete these required lines, otherwise there will be errors
 *filter
 :ufw-before-input - [0:0]
@@ -70,14 +81,6 @@
 # allow MULTICAST UPnP for service discovery (be sure the MULTICAST line above
 # is uncommented)
 -A ufw-before-input -p udp -d 239.255.255.250 --dport 1900 -j ACCEPT
-
-# rules.firedancer
-# rate limit quic handshakes
--A ufw-before-input -p udp --dport 9007 -m u32 --u32 "0x0&0xe0=0xc0" -m limit --limit 10/sec --limit-burst 5 -j ACCEPT
--A ufw-before-input -p udp --dport 9007 -m u32 --u32 "0x0&0xe0=0xc0" -j DROP
-# rate limit quic spam
--A ufw-before-input -p udp -m multiport --dports 9001,9002,9007,9008 -m u32 --u32 "0&0xc0=0x80" -j ACCEPT
--A ufw-before-input -p udp -m multiport --dports 9001,9002,9007,9008 -m hashlimit --hashlimit-name QUICSPAM --hashlimit-mode srcip --hashlimit-above 20/sec --hashlimit-burst 30 -j DROP
 
 # don't delete the 'COMMIT' line or these rules won't be processed
 COMMIT
