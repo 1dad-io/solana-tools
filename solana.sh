@@ -124,6 +124,7 @@ cmp_ver(){
 # END versioning
 
 # BEGIN vars/types
+empty(){ [ -z "$1" -o "$1" == 0 ]; }
 is_cidr(){
 	local A B C D N
 	IFS="./" read -r A B C D N <<< "$1"; unset IFS
@@ -2180,11 +2181,12 @@ jito_enabled(){ is_tag $TAG jito || rakurai_enabled; }
 jito_reload(){
 	jito_enabled || error ${err_version}
 	is_running   || error ${err_not_allowed//COND/running}
-	[ -n "${block_engine_url}" ]       && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url ${block_engine_url}
-	[ -n "${shred_receiver_address}" ] && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address ${shred_receiver_address}
-	[ -n "${relayer_url}" ]            && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url ${relayer_url}
-	[ -n "${bam_url}" ]                && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url ${bam_url}
-	ok ${msg_pkg_configured//PKG/jito}
+	set_arg(){ empty "$1" && echo '""' || echo "$1"; }
+	[ -n "${block_engine_url}" ]       && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url "$(set_arg ${block_engine_url})"
+	[ -n "${shred_receiver_address}" ] && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address "$(set_arg ${shred_receiver_address})"
+	[ -n "${relayer_url}" ]            && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url "$(set_arg ${relayer_url})"
+	[ -n "${bam_url}" ]                && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url "$(set_arg ${bam_url})"
+	ok ${msg_pkg_configured//PKG/}
 }
 # END jito-solana
 
@@ -3960,11 +3962,11 @@ validator(){
 	
 	# jito-solana
 	if jito_enabled; then
-		[ -n "${commission_bps}" ]         && args+=("--commission-bps ${commission_bps}")
-		[ -n "${block_engine_url}" ]       && args+=("--block-engine-url ${block_engine_url}")
-		[ -n "${relayer_url}" ]            && args+=("--relayer-url ${relayer_url}")
-		[ -n "${bam_url}" ]                && args+=("--bam-url ${bam_url}")
-		[ -n "${shred_receiver_address}" ] && args+=("--shred-receiver-address ${shred_receiver_address}")
+		[ -n "${commission_bps}" ]        && args+=("--commission-bps ${commission_bps}")
+		empty "${block_engine_url}"       || args+=("--block-engine-url ${block_engine_url}")
+		empty "${relayer_url}"            || args+=("--relayer-url ${relayer_url}")
+		empty "${bam_url}"                || args+=("--bam-url ${bam_url}")
+		empty "${shred_receiver_address}" || args+=("--shred-receiver-address ${shred_receiver_address}")
 	fi
 	
 	# jito-relayer
