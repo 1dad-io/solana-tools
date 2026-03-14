@@ -1743,6 +1743,7 @@ wait4e(){
 	done
 }
 
+ps_cmd(){ echo `ps ax -o args | grep ${1:-.}`; }
 wait4r(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	
@@ -1754,8 +1755,8 @@ wait4r(){
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
 		# skip new snapshot check if snapshots are disabled
-		# TODO: check the runtime configuration
-		[ -n "${no_snapshots}" ] && cmd+=" --skip-new-snapshot-check"
+		local runtime=$(ps_cmd ${validator##*/})
+		[[ "${runtime}" =~ --no-(incremental-)?snapshots ]] && cmd+=" --skip-new-snapshot-check"
 	fi
 	
 	[ -z "${now}" ] && is_running && ${cmd} || echo 'no-wait'
