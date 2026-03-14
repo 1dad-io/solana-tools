@@ -3924,13 +3924,16 @@ validator(){
 		fi
 	else # snapshots enabled
 		[ -n "${no_incremental_snapshots}" ] && args+=("--no-incremental-snapshots")
+		if [ "${full_snapshot_interval_slots}" -gt 0 ]; then
+			if [ -z "${no_incremental_snapshots}" ]; then
+				# only used when incremental snapshots are enabled
+				args+=("--full-snapshot-interval-slots ${full_snapshot_interval_slots}")
+			else
+				snapshot_interval_slots=${full_snapshot_interval_slots}
+			fi
+		fi
 		if [ "${snapshot_interval_slots}" -gt 0 ]; then
 			args+=("--snapshot-interval-slots ${snapshot_interval_slots}")
-			if [ -z "${no_incremental_snapshots}" ]; then
-				if [ "${full_snapshot_interval_slots}" -gt 0 ]; then
-					args+=("--full-snapshot-interval-slots ${full_snapshot_interval_slots}")
-				fi
-			fi
 		fi
 		
 		# accounts_db_hash_threads: 1 if snapshots disabled, 2-6 otherwise
