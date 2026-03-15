@@ -1194,9 +1194,10 @@ bind(){
 	fi
 	
 	# update config
-	save_conf 'ssh_bind' "${pub}" && \
-	save_conf 'ssh_host' "${bindip}" && \
-	save_conf 'private_rpc' 0 && ok || error
+	save_conf 'ssh_bind' "${pub}"
+	save_conf 'ssh_host' "${bindip}"
+	
+	ok
 }
 # END bind
 
