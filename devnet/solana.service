@@ -37,6 +37,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--known-validator dv4ACNkpYPcE3aKmYDqZm9G5EB3J4MRoeE7WNDRBVJB \
 	--known-validator dv3qDFk1DTF36Z62bNvrCXe9sKATA6xvVy6A798xxAS \
 	--dynamic-port-range 8000-8025 \
+	--rpc-bind-address 0.0.0.0 \
 	--rpc-port 8899 \
 	--full-rpc-api \
 	--only-known-rpc \
