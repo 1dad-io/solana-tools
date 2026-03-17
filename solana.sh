@@ -256,8 +256,8 @@ read_conf(){
 	setup_cli_full=${setup_cli_full:-0}
 	setup_relayer=${setup_relayer:-1}
 	setup_cron=${setup_cron:-1}
-	setup_aliases=${setup_aliases:-1}
-	setup_finder=${setup_finder:-0}
+	setup_bash_aliases=${setup_bash_aliases:-1}
+	setup_snap_finder=${setup_snap_finder:-0}
 	setup_user=${setup_user:-ubuntu}
 	sudoers=${sudoers:-sudo}
 	
@@ -2841,7 +2841,7 @@ setup(){
 		fi
 	fi
 	
-	# install the crontab
+	# install crontab
 	local f=${tool%/*}/crontab
 	if [ "${setup_cron}" == 1 -a -s "${f}" ]; then
 		[ ! -f "${f}.bak" ] && { crontab -l >${f}.bak || :; }
@@ -2863,24 +2863,33 @@ setup(){
 		info ${msg_pkg_configured//PKG/logrotate}
 	fi
 	
-	# install the bash aliases
-	if [ "${setup_aliases}" == 1 ]; then
+	# install .bash_aliases
+	if [ "${setup_bash_aliases}" == 1 ]; then
 		ln -s ${tool%/*}/.bash_aliases $HOME/.bash_aliases 2>/dev/null || :
 		source $HOME/.bash_aliases
 		info ${msg_pkg_installed//PKG/bash_aliases}
 	fi
 	
-	# install the snapshot finder
-	if [ "${setup_finder}" == 1 -a -n "${git_finder}" ]; then
-		local repo=${tool%/*}/${git_finder##*/}
-		rm -rf ${repo}
+	# install solana-snapshot-finder
+	if [ "${setup_snap_finder}" == 1 -a -n "${git_snap_finder}" ]; then
 		get_pkg git python3-venv
-		git -C ${tool%/*} clone ${git_finder}
-		cd ${repo}
+		local git=${git_snap_finder} branch=main
+		local repo=$(echo "${git##*/}" | sed 's/\.git//g')
+		REPO=${tool%/*}/${repo}
+		if [ ! -d "$REPO/.git" ]; then
+			git -C ${tool%/*} clone ${git}
+			cd $REPO
+		else
+			cd $REPO
+			git fetch --all
+			git reset --hard origin/${branch}
+			git clean -fd
+		fi
 		python3 -m venv venv
 		source ./venv/bin/activate
 		pip3 install -r requirements.txt
-		info ${msg_pkg_installed//PKG/snapshot-finder}
+		deactivate
+		info ${msg_pkg_installed//PKG/${repo}}
 	fi
 	
 	unset LOG
