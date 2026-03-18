@@ -110,17 +110,18 @@ debug(){
 # END reporting
 
 # BEGIN versioning
-ver_re='[0-9]+(\.[0-9]+)*'
-suffix='(\-[.a-z0-9]+){0,1}'
-is_ver(){ [[ "$1" =~ ^${ver_re}${suffix}$ ]]; }
-is_tag(){ local s; [ -z "$2" ] && s=${suffix} || s="(\-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
-tag2ver(){ is_tag "$1" && echo "$1" | sed -E "s/${suffix}//g" | sed 's/[^.0-9]*//g' || echo "$1"; }
+suffix='(-[.a-z0-9]+)' # ex: -beta.0
+ver_re='[0-9]+(\.[0-9]+)*'${suffix}'*'
+is_ver(){ [[ "$1" =~ ^${ver_re}$ ]]; }
+is_tag(){ local s; [ -n "$2" ] && local s="(-${2})[.a-z0-9]*"; [[ "$1" =~ ^v${ver_re}${s}$ ]]; }
+tag2ver(){ is_tag "$1" && echo "$1" | sed -E "s/${suffix}$//g" | sed 's/^v//g' || echo "$1"; }
 cmp_ver(){
 	[ $# -eq 2 ] || error ${err_arg_count}
 	is_ver "$1"  || error ${err_version} 1
 	is_ver "$2"  || error ${err_version} 2
 	printf '%s\n%s\n' "$2" "$1" | sort --check=quiet --version-sort
 }
+make_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}$/v$2\2/" || echo "v$2"; }
 # END versioning
 
 # BEGIN vars/types
@@ -139,7 +140,7 @@ is_linux(){ [[ "$OSTYPE" == 'linux-gnu'* ]]; }
 is_macos(){ [[ "$OSTYPE" == 'darwin'* ]]; }
 is_dryrun(){ [ "${dryrun}" == 1 ]; }
 is_staked(){ cmp -s ${keypair} ${staked}; }
-user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R $USER: ${tool%/*}; }
+user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R "$USER:" ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
 [ -n "$SSH_CLIENT" ] && client=`echo $SSH_CLIENT | awk '{print $1}'` || client=systemd
 dirs=(tower ledger accounts accounts_index accounts_shrink snapshots snapshots_inc)
@@ -646,7 +647,8 @@ set_bin(){
 set_cmd(){
 	is_macos && cmd_ctime="/usr/bin/stat -f %B" || cmd_ctime="stat -c %W"
 	is_macos && cmd_mtime="/usr/bin/stat -f %m" || cmd_mtime="stat -c %Y"
-	is_dryrun && cmd_exec='echo' || cmd_exec='sudo'
+	is_dryrun && cmd_sudo='echo' || cmd_sudo='sudo'
+	is_dryrun && cmd_user='echo' || cmd_user=${sudo}
 	
 	# check for coreutils version
 	local v=`cp --version | head -n1 | sed 's/[^0-9.]*//g'`
@@ -656,35 +658,35 @@ set_cmd(){
 	[ -s "${oldunit}" ] && local old_unit=$(<${oldunit})
 	
 	local unit=${systemd:-$(get_systemd)}
-	cmd_cpufreq="${cmd_exec} cpupower -c CORE frequency-set -r -g GOV"
+	cmd_cpufreq="${cmd_sudo} cpupower -c CORE frequency-set -r -g GOV"
 	cmd_keygen="${keygen} new --no-bip39-passphrase -s"
-	cmd_reload="${cmd_exec} systemctl daemon-reload"
+	cmd_reload="${cmd_sudo} systemctl daemon-reload"
 	cmd_ssh="${sudo} ssh -o LogLevel=ERROR -o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null"
 	cmd_scp=${cmd_ssh//ssh/scp}
-	cmd_status="${cmd_exec} systemctl status ${old_unit:-${unit}}"
-	cmd_start="${cmd_exec} systemctl start ${unit}"
-	cmd_stop="${cmd_exec} systemctl stop ${old_unit:-${unit}}"
-	cmd_trim="${cmd_exec} /usr/sbin/fstrim -av"
-	cmd_wait="${cmd_exec} ${env_keep} ${validator} -l ${ledger} wait-for-restart-window"
+	cmd_status="${cmd_sudo} systemctl status ${old_unit:-${unit}}"
+	cmd_start="${cmd_sudo} systemctl start ${unit}"
+	cmd_stop="${cmd_sudo} systemctl stop ${old_unit:-${unit}}"
+	cmd_trim="${cmd_sudo} /usr/sbin/fstrim -av"
+	cmd_wait="${cmd_user} ${env_keep} ${validator} -l ${ledger} wait-for-restart-window"
 	
 	# jito-relayer
-	cmd_relayer_status="${cmd_exec} systemctl status ${relayerd}"
-	cmd_relayer_restart="${cmd_exec} systemctl restart ${relayerd}"
+	cmd_relayer_status="${cmd_sudo} systemctl status ${relayerd}"
+	cmd_relayer_restart="${cmd_sudo} systemctl restart ${relayerd}"
 	
 	# firedancer
-	# fixed a bug: OPTIONS must now be specified after SUBCOMMAND
-	cmd_fd="${cmd_exec} ${fdctl} CMD --config ${fd_conf}"
+	# fixed a bug: OPTIONS must be specified after SUBCOMMAND
+	cmd_fd="${cmd_sudo} ${fdctl} CMD --config ${fd_conf}"
 	
 	# doublezero
-	cmd_dz_restart="${cmd_exec} systemctl restart ${dz_systemd}"
-	cmd_dz_status="${cmd_exec} systemctl status ${dz_systemd}"
+	cmd_dz_restart="${cmd_sudo} systemctl restart ${dz_systemd}"
+	cmd_dz_status="${cmd_sudo} systemctl status ${dz_systemd}"
 }; set_cmd
 # END commands
 
 # BEGIN one-liners
 export_(){ [ -z "$1" ] && error ${err_arg}; local var=$1; echo ${!var}; }
 get_gov(){ [ "${cpu_gov}" != 'disabled' ] && echo ${cpu_gov} || echo ${cpu_gov_default}; }
-monitor(){ ${cmd_exec} ${env_keep} ${validator} -l ${ledger} monitor; }
+monitor(){ ${cmd_user} ${env_keep} ${validator} -l ${ledger} monitor; }
 on_boot(){ date >${wd_boot} 2>/dev/null; log "$(rm -fv ${oldunit})"; log "$(rm -fv ${tool%/*}/*.pid)"; }
 starter(){ if [ -z "${reboot}" ]; then ${cmd_reload} && ${cmd_start} && date >${wd_start} 2>/dev/null; else echo 'no-start'; fi; }
 stopper(){ ${cmd_stop}; if [ -s "${oldunit}" ]; then rm -f ${oldunit} && setup_log ${log}; else echo 'no-leftover'; fi; }
@@ -827,7 +829,7 @@ pid_unlock(){ ${sudo} rm -f $1; }
 remount(){
 	[ -z "$1" ] && return 0
 	local d=`echo "$1" | cut -d/ -f 1-3` # /path/to
-	if grep -q "${d}" /etc/fstab 2>/dev/null; then
+	if grep -Eq "^[[:space:]]*[^#].*${d}" /etc/fstab 2>/dev/null; then
 		grep -q "${d}" /proc/mounts 2>/dev/null || sudo mount "${d}"
 	fi
 }
@@ -1689,8 +1691,9 @@ mklog(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	[ -n "$1" -a "$1" != '-' ] || return 0
 	local d=${1%/*}
-	is_virt && remount ${d}
-	[ -d "${d}" ] || sudo mkdir -p ${d}
+	remount ${d} # mount if not mounted
+	sudo mkdir -p ${d}
+	[[ "${d}" == /mnt/* ]] && sudo chown -R "$USER:" ${d}
 }
 
 setup_log(){
@@ -1813,7 +1816,7 @@ restart(){
 			[[ "${d}" == *"${v}"* ]] && args+=("${!d}")
 		done
 	done
-	[ "${#args[@]}" -gt 0 ] && cmd_clean="${cmd_exec} rm -rf "$(implode ' ' "${args[@]}")
+	[ "${#args[@]}" -gt 0 ] && cmd_clean="${cmd_sudo} rm -rf "$(implode ' ' "${args[@]}")
 	
 	# prepare the move
 	local cmd_move='echo no-move'
@@ -1824,7 +1827,7 @@ restart(){
 			set -f
 			local src=$1; shift
 			local dest=$1; shift
-			cmd_move="${cmd_exec} mv -fv ${src} ${dest}"
+			cmd_move="${cmd_sudo} mv -fv ${src} ${dest}"
 			set +f
 		fi
 	fi
@@ -1838,7 +1841,7 @@ restart(){
 			set -f
 			local target=$1; shift
 			local name=$1; shift
-			cmd_link="${cmd_exec} ln -sfnv ${target} ${name}"
+			cmd_link="${cmd_sudo} ln -sfnv ${target} ${name}"
 			set +f
 		fi
 	fi
@@ -1846,7 +1849,7 @@ restart(){
 	# prepare the reboot
 	local cmd_reboot='echo no-reboot'
 	if [ "${reboot}" == 1 ]; then
-		cmd_reboot="${cmd_exec} reboot"
+		cmd_reboot="${cmd_sudo} reboot"
 	fi
 	
 	trim # trim all mounted FS
@@ -1856,7 +1859,6 @@ restart(){
 # END start/stop/restart
 
 # BEGIN update
-make_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}${suffix}$/v$2\2/" || echo "v$2"; }
 save_tag(){
 	# if no TAG is found, the user prefers not to declare a specific TAG,
 	# and the active_release symlink will be used to resolve the binaries
@@ -2183,10 +2185,10 @@ jito_reload(){
 	jito_enabled || error ${err_version}
 	is_running   || error ${err_not_allowed//COND/running}
 	set_arg(){ empty "$1" && echo '""' || echo "$1"; }
-	[ -n "${block_engine_url}" ]       && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url "$(set_arg ${block_engine_url})"
-	[ -n "${shred_receiver_address}" ] && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address "$(set_arg ${shred_receiver_address})"
-	[ -n "${relayer_url}" ]            && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url "$(set_arg ${relayer_url})"
-	[ -n "${bam_url}" ]                && ${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url "$(set_arg ${bam_url})"
+	[ -n "${block_engine_url}" ]       && ${cmd_user} ${env_keep} ${validator} -l ${ledger} set-block-engine-config --block-engine-url "$(set_arg ${block_engine_url})"
+	[ -n "${shred_receiver_address}" ] && ${cmd_user} ${env_keep} ${validator} -l ${ledger} set-shred-receiver-address --shred-receiver-address "$(set_arg ${shred_receiver_address})"
+	[ -n "${relayer_url}" ]            && ${cmd_user} ${env_keep} ${validator} -l ${ledger} set-relayer-config --relayer-url "$(set_arg ${relayer_url})"
+	[ -n "${bam_url}" ]                && ${cmd_user} ${env_keep} ${validator} -l ${ledger} set-bam-config --bam-url "$(set_arg ${bam_url})"
 	ok ${msg_pkg_configured//PKG/}
 }
 # END jito-solana
@@ -2947,7 +2949,7 @@ make_snapshot(){
 	[ -n "${snapshots_inc}" ]  && args+=("--incremental-snapshot-archive-path ${snapshots_inc}")
 	
 	# run the snapshot tool
-	${cmd_exec} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") "$@" -- ${slot} && ok
+	${cmd_user} ${ledger_tool} create-snapshot -l ${ledger} $(implode ' ' "${args[@]}") "$@" -- ${slot} && ok
 }
 # END snapshot
 
@@ -3204,7 +3206,7 @@ txtower(){
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
+		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
 	[ "${unstaked%/*}" == "${keypair%/*}" ] && local unstaked=${unstaked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${unstaked} ${keypair}"
@@ -3249,12 +3251,12 @@ rxtower(){
 	# make up commands
 	local pub=`${keygen} pubkey ${staked}`
 	local f=${tower}/tower-{,1_9-}${pub}.bin
-	local cmd_rm="${cmd_exec} rm -fv ${f}"
+	local cmd_rm="${cmd_sudo} rm -fv ${f}"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
+		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
 	fi
 	[ "${staked%/*}" == "${keypair%/*}" ] && local staked=${staked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${staked} ${keypair}"
@@ -3279,6 +3281,7 @@ rxtower(){
 			# until the tower auto-discard PR is merged into the master branch
 			# [deletion is now handled within the transition below]
 		else
+			sudo chown "$USER:" ${f}
 			local str=${msg_tower_ok//TIME/$(elapsed $mdiff)}
 			cmd_rm="echo ${str//TTL/${tower_ttl}}"
 		fi
@@ -3312,7 +3315,7 @@ vote_off(){
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_exec} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
+		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity ${unstaked}"
 	fi
 	[ "${unstaked%/*}" == "${keypair%/*}" ] && local unstaked=${unstaked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${unstaked} ${keypair}"
@@ -3884,14 +3887,17 @@ validator(){
 		return 0
 	fi
 	
-	# remount dirs if VM detected
-	if is_virt; then
-		info ${msg_vm_mount}
-		local d
-		for d in "${dirs[@]}"; do remount "${!d}"; done
-	else
-		info ${msg_vm_false}
-	fi
+	is_virt || info ${msg_vm_false}
+	
+	# mount filesystems that are not yet mounted
+	info ${msg_mount}
+	local d
+	for d in "${dirs[@]}"; do remount "${!d}"; done
+	
+	# set permissions for dirs located in /mnt/*
+	for d in "${dirs[@]}"; do
+		[[ "${!d}" == /mnt/* ]] && printf '%s\n' "${!d}"
+	done | cut -d/ -f1-3 | sort -u | xargs -r -d '\n' sudo chown -R "$USER:" --
 	
 	# ensure the log dir exists
 	mklog ${log}
@@ -4016,9 +4022,6 @@ validator(){
 	# firedancer
 	if fd_enabled; then
 		if [ -f "${fdctl}" ]; then
-			# TODO: make it remount() style
-			sudo chown -R $USER: /mnt/*
-			
 			${cmd_fd//CMD/configure init all}
 			log "${msg_pkg_configured//PKG/fdctl}"
 			exec ${cmd_fd//CMD/run}
@@ -4026,14 +4029,17 @@ validator(){
 			error ${err_file_read//FILE/${fdctl}}
 		fi
 	else
-		# free up the hugepages if switching from firedancer to agave
+		# free up hugepages if switching from firedancer to agave
 		if [ "${free_hugepgs}" == 1 ]; then
 			if [ -f "${fdctl}" -a -d "/mnt/.fd" ]; then
 				${cmd_fd//CMD/configure fini hugetlbfs}
 				log "${msg_hugepages_freed}"
 			fi
 		fi
-		exec ${validator} "$@" $(implode ' ' "${args[@]}")
+		
+		local cmd="${sudo} ${validator} $@ "$(implode ' ' "${args[@]}")
+		log "${cmd}"
+		exec ${cmd}
 	fi
 }
 # END validator
