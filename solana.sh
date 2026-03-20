@@ -558,10 +558,6 @@ read_systemd(){
 	[ -s "$FILE" ] || error ${err_file_read//FILE/$FILE}
 	
 	TAG=$(get_env 'TAG')
-	
-	# firedancer
-	TAG_FD=$(get_env 'TAG_FD')
-	
 	keypair=$(get_opt 'identity')
 	vote_acc=$(get_opt 'vote-account')
 	
@@ -2089,7 +2085,7 @@ fd_update(){
 			warn ${str} ${tip_forced}
 		else
 			# update the systemd unit file with the new tag
-			[ "$TAG_FD" == "$oTAG" ] || save_tag $TAG_FD 'TAG_FD'
+			[ "$TAG_FD" == "$oTAG" ] || save_conf 'TAG_FD' "$TAG_FD"
 			
 			# set new active_release
 			symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
@@ -2144,7 +2140,7 @@ fd_update(){
 	symlink $TARGET ${active} || info ${err_file_exists//FILE/${active}}
 	
 	# update the systemd unit file with the new tag
-	save_tag $TAG_FD 'TAG_FD' && set_bin && set_cmd && ok
+	save_conf 'TAG_FD' "$TAG_FD" && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
 	# resume the watchdog
