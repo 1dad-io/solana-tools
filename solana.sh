@@ -18,7 +18,7 @@ pkg_version=0.1.0
 # ternary operator: cond ? a : b
 if_num(){ (( $1 )) && echo "$3" || echo "$5"; }
 if_str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
-if_fun(){ if $1; then echo "$3"; else echo "$5"; fi; }
+if_func(){ if $1; then echo "$3"; else echo "$5"; fi; }
 
 # BEGIN reporting
 is_num(){ [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]]; }
@@ -697,7 +697,7 @@ truncate(){ [ -f "$1" ] || return 0; sed -e :a -e "\$q;N;$((${2:-10}+1)),\$D;ba"
 # BEGIN common
 assert_allowed(){
 	[ -n "$1" ] || return 0
-	local str=$(if_fun is_staked ? staked : unstaked)
+	local str=$(if_func is_staked ? staked : unstaked)
 	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
 }
 
@@ -732,7 +732,6 @@ elapsed(){
 	(( $D > 0 )) && printf '%dd ' $D
 	(( $H > 0 )) && printf '%dh ' $H
 	(( $M > 0 )) && printf '%dm ' $M
-	# (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
 	printf '%ds\n' $S
 }
 
@@ -926,7 +925,7 @@ tx(){
 	local recipient=$1
 	local from_addr=$2
 	local amount=${3:-0}
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# verify `recipient`
@@ -981,7 +980,7 @@ precheck(){
 	assert_allowed ${airdrop_allow}
 	
 	# stop if `airdrop_to` >= `airdrop_max`
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_to} 2>&1` || error "${resp}"
 	local b_to=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -997,7 +996,7 @@ airdrop(){
 	LOG=y
 	
 	# stop if `airdrop_from` <= `airdrop_min`
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_from} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1046,7 +1045,7 @@ poll(){
 	LOG=y
 	
 	# get the temporary keypair balance
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${f} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1088,7 +1087,7 @@ balance(){
 	assert_allowed ${balance_allow}
 	
 	LOG=y
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# stop if `balance_from` <= `balance_min`
@@ -1732,7 +1731,7 @@ EOF"
 wait4e(){
 	[ -n "$1" ] || return 0
 	
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	while true; do
 		local epoch=$(curr_epoch ${u})
 		local str=${msg_epoch_wait//CURR/${epoch:-0}}
@@ -2403,7 +2402,7 @@ pda_fees(){
 	LOG=y
 	
 	# look `dz_fees_epoch_offset` epochs back
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local offset=${1:-${dz_fees_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
@@ -2996,7 +2995,7 @@ slots(){
 	local pub=`${keygen} pubkey ${keypair}`
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
-	local u=$(if_fun is_running ? localhost : "${rpc_url}")
+	local u=$(if_func is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}"
 	
 	# https://stackoverflow.com/a/58617630
