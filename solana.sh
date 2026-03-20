@@ -126,6 +126,7 @@ make_tag(){ is_tag "$1" && echo "$1" | sed -E "s/^v${ver_re}$/v$2\2/" || echo "v
 
 # BEGIN vars/types
 empty(){ [ -z "$1" -o "$1" == 0 ]; }
+is_port(){ [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -le 65535 ]; }
 is_cidr(){
 	local A B C D N
 	IFS="./" read -r A B C D N <<< "$1"; unset IFS
@@ -587,6 +588,8 @@ read_systemd(){
 	snapshots_age=$(get_opt 'maximum-local-snapshot-age' 2500)
 	log=$(get_opt 'log')
 	rocksdb_shred=$(get_opt 'rocksdb-shred-compaction' 'level')
+	dynamic_port_range=$(get_opt 'dynamic-port-range' '8000-8025')
+	gossip_port=$(get_opt 'gossip-port')
 	rpc_port=$(get_opt 'rpc-port' 8899)
 	unset FILE
 }; read_systemd
@@ -1122,7 +1125,8 @@ balance(){
 ufw_purge_unbound(){
 	local bindip=${1:-${ssh_host}}
 	get_pkg ufw
-	status(){ sudo ufw status numbered | grep 'ALLOW IN' | grep -E 'ssh_bind|solana_rpc_bind'; }
+	# TODO: remove 'ssh_bind|solana_rpc_bind|' transient fix
+	status(){ sudo ufw status numbered | grep 'ALLOW IN' | grep -E 'ssh_bind|solana_rpc_bind|bind_ssh|bind_rpc'; }
 	local ips=(`echo "$(status)" | cut -d ']' -f 2 | awk '{print $4}'`) ip
 	for ip in "${ips[@]}"; do
 		if is_ip ${ip} && [ "${ip}" != "${bindip}" ]; then
@@ -1183,8 +1187,8 @@ bind(){
 		# allow ssh & solana_rpc
 		get_pkg ufw
 		local port=`grep Port /etc/ssh/sshd_config | awk '{print $2}'`
-		sudo ufw allow from ${bindip} to any port ${port:-22} proto tcp comment 'ssh_bind'
-		sudo ufw allow from ${bindip} to any port ${rpc_port} proto tcp comment 'solana_rpc_bind'
+		sudo ufw allow from ${bindip} to any port ${port:-22} proto tcp comment 'bind_ssh'
+		sudo ufw allow from ${bindip} to any port ${rpc_port} proto tcp comment 'bind_rpc'
 		sudo ufw status | grep -q inactive && sudo ufw enable
 		sudo ufw status
 		info ${msg_pkg_configured//PKG/ufw}
@@ -2605,7 +2609,6 @@ setup(){
 		fi
 		
 		# allow solana_rpc
-		# NOTE: `private_rpc` is a runtime arg and cannot be used here
 		local any="allow ${rpc_port}/tcp"
 		if [ -z "${setup_ufw_rpc}" ]; then
 			sudo ufw ${any} comment 'solana_rpc'
@@ -2620,9 +2623,8 @@ setup(){
 		fi
 		
 		# allow solana_ws
-		# NOTE: `private_rpc` is a runtime arg and cannot be used here
-		yes | sudo ufw delete allow 8900/tcp # delete solana_websocket (transient fix)
-		local ws_port=$((${rpc_port:-0}+1))
+		yes | sudo ufw delete allow 8900/tcp # TODO: delete solana_websocket transient fix
+		local ws_port=$((${rpc_port}+1))
 		local any="allow ${ws_port}/tcp"
 		if [ -z "${setup_ufw_ws}" ]; then
 			sudo ufw ${any} comment 'solana_ws'
@@ -2636,9 +2638,19 @@ setup(){
 			yes | sudo ufw delete ${any//allow/limit}
 		fi
 		
-		# allow solana_*
-		sudo ufw allow 8000/tcp      comment 'solana_gossip'
-		sudo ufw allow 8000:8025/udp comment 'solana_dynamic'
+		# allow solana_gossip
+		yes | sudo ufw delete allow 8000/tcp # TODO: delete solana_gossip transient fix
+		if is_port "${gossip_port}"; then
+			sudo ufw allow ${gossip_port}/udp comment 'solana_gossip'
+		fi
+		
+		# allow solana_dynamic
+		if [[ "${dynamic_port_range}" =~ ^([0-9]{1,5})-([0-9]{1,5})$ ]]; then
+			local min=${BASH_REMATCH[1]}
+			local max=${BASH_REMATCH[2]}
+			is_port "${min}" && is_port "${max}" && (($min <= $max)) || error ${err_port//PORT/dynamic_port_range}
+			sudo ufw allow ${min}:${max}/udp comment 'solana_dynamic'
+		fi
 		
 		# allow jito-relayer
 		# relayer 11226/tcp (grpc_bind_port) to run on a separate host
@@ -2651,8 +2663,9 @@ setup(){
 		fi
 		
 		# allow firedancer
+		yes | sudo ufw delete allow 8001/tcp # TODO: delete solana_fd_gossip transient fix
 		if fd_enabled; then
-			sudo ufw allow 8001/tcp      comment 'solana_fd_gossip'
+			sudo ufw allow 8001/udp      comment 'solana_fd_gossip'
 			sudo ufw allow 8900:9000/udp comment 'solana_fd_dynamic'
 		fi
 		
