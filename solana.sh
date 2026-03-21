@@ -405,6 +405,12 @@ while test $# -gt 0; do
 		shift;;
 	# options
 	# TODO: make them universal by dash-converter (`-` to `_`)
+	--bind-address*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		bind_address=${bind_address:-$(opt_val "$1")}
+		shift;;
 	--accounts-db-hash-threads*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
@@ -3968,9 +3974,6 @@ validator(){
 			unset accounts_db_hash_threads
 		fi
 	fi
-	if [ "${accounts_db_hash_threads:-0}" -gt 0 ]; then
-		args+=("--accounts-db-hash-threads ${accounts_db_hash_threads}")
-	fi
 	if [ -n "${no_snapshot_fetch}" ]; then
 		# check if the most recent snapshot is provided and it's not
 		# older than --maximum-local-snapshot-age before setting the
@@ -3982,6 +3985,16 @@ validator(){
 			str=${msg_flag_allowed}
 		fi
 		log "${res}, ${str//FLAG/${flag}}"
+	fi
+	if [ -n "${bind_address}" ]; then
+		if [ "${bind_address}" == 'auto' ]; then
+			# get the external IP address
+			bind_address=$(get_wanip) || error ${err_wanip}
+		fi
+		is_ip "${bind_address}" && args+=("--bind-address ${bind_address}")
+	fi
+	if [ "${accounts_db_hash_threads:-0}" -gt 0 ]; then
+		args+=("--accounts-db-hash-threads ${accounts_db_hash_threads}")
 	fi
 	
 	# jito-solana
