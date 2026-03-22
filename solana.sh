@@ -4014,11 +4014,6 @@ validator(){
 		[ -n "${trust_relayer_packets}" ] && args+=("--trust-relayer-packets")
 	fi
 	
-	# doublezero
-	if dz_enabled; then
-		[ -n "${dz_shred_receiver_address}" ] && args+=("--shred-receiver-address ${dz_shred_receiver_address}")
-	fi
-	
 	# rakurai
 	if rakurai_enabled; then
 		[ -n "${rewards_merkle_root_authority}" ]  && args+=("--rewards-merkle-root-authority ${rewards_merkle_root_authority}")
