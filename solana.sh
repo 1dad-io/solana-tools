@@ -1131,8 +1131,7 @@ balance(){
 ufw_purge_unbound(){
 	local bindip=${1:-${ssh_host}}
 	get_pkg ufw
-	# TODO: remove 'ssh_bind|solana_rpc_bind|' transient fix
-	status(){ sudo ufw status numbered | grep 'ALLOW IN' | grep -E 'ssh_bind|solana_rpc_bind|bind_ssh|bind_rpc'; }
+	status(){ sudo ufw status numbered | grep 'ALLOW IN' | grep -E 'bind_ssh|bind_rpc'; }
 	local ips=(`echo "$(status)" | cut -d ']' -f 2 | awk '{print $4}'`) ip
 	for ip in "${ips[@]}"; do
 		if is_ip ${ip} && [ "${ip}" != "${bindip}" ]; then
@@ -2629,7 +2628,6 @@ setup(){
 		fi
 		
 		# allow solana_ws
-		yes | sudo ufw delete allow 8900/tcp # TODO: delete solana_websocket transient fix
 		local ws_port=$((${rpc_port}+1))
 		local any="allow ${ws_port}/tcp"
 		if [ -z "${setup_ufw_ws}" ]; then
@@ -2645,7 +2643,6 @@ setup(){
 		fi
 		
 		# allow solana_gossip
-		yes | sudo ufw delete allow 8000/tcp # TODO: delete solana_gossip transient fix
 		if is_port "${gossip_port}"; then
 			sudo ufw allow ${gossip_port}/udp comment 'solana_gossip'
 		fi
@@ -2679,8 +2676,7 @@ setup(){
 		# the GRE tunnel between a validator and the DoubleZero Device
 		local dz_i="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
 		local dz_o="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
-		local dz_lm="allow 44880/udp" # liveness manager
-		yes | sudo ufw delete ${dz_lm} # TODO: delete solana_dz_lm transient fix
+		# allow DoubleZero Liveness Manager on doublezero0 (44880/udp)
 		local dz_lm_i="allow in on doublezero0 to any port 44880 proto udp"
 		local dz_lm_o="allow out on doublezero0 to any port 44880 proto udp"
 		if dz_enabled; then
