@@ -2669,7 +2669,6 @@ setup(){
 		fi
 		
 		# allow firedancer
-		yes | sudo ufw delete allow 8001/tcp # TODO: delete solana_fd_gossip transient fix
 		if fd_enabled; then
 			sudo ufw allow 8001/udp      comment 'solana_fd_gossip'
 			sudo ufw allow 8900:9000/udp comment 'solana_fd_dynamic'
@@ -2678,18 +2677,23 @@ setup(){
 		# allow doublezero
 		# DoubleZero uses link-local address space: 169.254.0.0/16 for
 		# the GRE tunnel between a validator and the DoubleZero Device
-		local dz_in="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
-		local dz_out="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
+		local dz_i="allow in proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
+		local dz_o="allow out proto tcp from 169.254.0.0/16 to 169.254.0.0/16 port 179"
 		local dz_lm="allow 44880/udp" # liveness manager
+		yes | sudo ufw delete ${dz_lm} # TODO: delete solana_dz_lm transient fix
+		local dz_lm_i="allow in on doublezero0 to any port 44880 proto udp"
+		local dz_lm_o="allow out on doublezero0 to any port 44880 proto udp"
 		if dz_enabled; then
 			yes | sudo ufw delete deny out from any to 169.254.0.0/16
-			sudo ufw ${dz_in}  comment 'solana_dz_in'
-			sudo ufw ${dz_out} comment 'solana_dz_out'
-			sudo ufw ${dz_lm}  comment 'solana_dz_lm'
+			sudo ufw ${dz_i}    comment 'solana_dz'
+			sudo ufw ${dz_o}    comment 'solana_dz'
+			sudo ufw ${dz_lm_i} comment 'solana_dz_lm'
+			sudo ufw ${dz_lm_o} comment 'solana_dz_lm'
 		else
-			yes | sudo ufw delete ${dz_in}
-			yes | sudo ufw delete ${dz_out}
-			yes | sudo ufw delete ${dz_lm}
+			yes | sudo ufw delete ${dz_i}
+			yes | sudo ufw delete ${dz_o}
+			yes | sudo ufw delete ${dz_lm_i}
+			yes | sudo ufw delete ${dz_lm_o}
 		fi
 		
 		# block outgoing traffic to private networks
