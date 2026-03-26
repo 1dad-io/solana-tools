@@ -22,12 +22,12 @@ download(){
 	local d=${tool%/*}/solana-snapshot-finder
 	[ -d "${d}" ] || { echo "${d##*/} not installed"; exit 1; }
 	local rpc_url=`${tool} export rpc_url`
-	local max_age=`${tool} export full_snapshot_interval_slots`
+	local max_age=`${tool} export maximum_local_snapshot_age`
 	${d}/venv/bin/python ${d}/snapshot-finder.py \
-		--rpc-address ${rpc_url} \
+		--url ${rpc_url} \
 		--snapshots ${snapshots} \
 		--incremental-snapshot-archive-path ${snapshots_inc} \
-		--max-snapshot-age ${max_age:-100000}
+		--maximum-local-snapshot-age ${max_age:-2500}
 }
 
 make_inc(){
