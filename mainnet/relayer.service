@@ -13,10 +13,14 @@ Environment=RUST_LOG=info
 Environment=SOLANA_METRICS_CONFIG="host=http://metrics.jito.wtf:8086,db=relayer,u=relayer-operators,p=jito-relayer-write"
 Environment=TAG=v0.4.2
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://dublin.mainnet.block-engine.jito.wtf"
 # Environment="BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://london.mainnet.block-engine.jito.wtf"
 Environment="BLOCK_ENGINE_URL=https://ny.mainnet.block-engine.jito.wtf"
-# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
 # Environment="BLOCK_ENGINE_URL=https://slc.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://singapore.mainnet.block-engine.jito.wtf"
+# Environment="BLOCK_ENGINE_URL=https://tokyo.mainnet.block-engine.jito.wtf"
+
 Environment=GRPC_BIND_IP=127.0.0.1
 
 ExecStart=/home/ubuntu/solana-tools/solana.sh relayer \
