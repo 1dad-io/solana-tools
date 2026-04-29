@@ -2788,7 +2788,7 @@ setup(){
 		[ "${setup_unstaked}" == 1 ] && local flag='-f'
 		ln -s ${flag} ${staked} ${keypair} 2>/dev/null || :
 		ln -s ${keypair} $HOME/.config/solana/id.json 2>/dev/null || :
-		find ${keypair%/*} -type f -print0 | xargs -0 chmod 600
+		find -L ${keypair%/*} -type f -print0 | xargs -0 chmod 600
 		
 		# install the systemd unit file
 		local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
@@ -2919,7 +2919,7 @@ check_snapshot(){
 	local max_age=${1:-${snapshots_age}}
 	local status=1 str=${msg_snap_missing}
 	local d; [ -z "${no_incremental_snapshots}" ] && d=${snapshots_inc} || d=${snapshots}
-	local f=`find ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
+	local f=`find -L ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
 	if [ -f "${f}" ]; then
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
