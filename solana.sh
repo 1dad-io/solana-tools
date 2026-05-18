@@ -371,14 +371,20 @@ while test $# -gt 0; do
 		is_ver ${version} || unset version
 		shift;;
 	# overrides BEGIN
+	# TODO: make them universal by dash-converter (`-` to `_`)
 	--known-validator*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		known_id+=($(opt_val "$1"))
 		shift;;
-	# flags [01]
-	# TODO: make them universal by dash-converter (`-` to `_`)
+	# agave
+	--bind-address*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		bind_address=${bind_address:-$(opt_val "$1")}
+		shift;;
 	--only-known-rpc)
 		only_known_rpc=${only_known_rpc:-1}
 		[ ${only_known_rpc} == 1 ] || unset only_known_rpc
@@ -403,14 +409,6 @@ while test $# -gt 0; do
 		no_incremental_snapshots=${no_incremental_snapshots:-1}
 		[ ${no_incremental_snapshots} == 1 ] || unset no_incremental_snapshots
 		shift;;
-	# options
-	# TODO: make them universal by dash-converter (`-` to `_`)
-	--bind-address*)
-		opt=$1
-		if ! grep -q '=' <<< "$1"; then shift; fi
-		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
-		bind_address=${bind_address:-$(opt_val "$1")}
-		shift;;
 	--accounts-db-hash-threads*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
@@ -428,6 +426,28 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		full_snapshot_interval_slots=${full_snapshot_interval_slots:-$(opt_val "$1")}
+		shift;;
+	--experimental-poh-pinned-cpu-core*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		experimental_poh_pinned_cpu_core=${experimental_poh_pinned_cpu_core:-$(opt_val "$1")}
+		shift;;
+	--experimental-retransmit-xdp-cpu-cores*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		experimental_retransmit_xdp_cpu_cores=${experimental_retransmit_xdp_cpu_cores:-$(opt_val "$1")}
+		shift;;
+	--experimental-retransmit-xdp-interface*)
+		opt=$1
+		if ! grep -q '=' <<< "$1"; then shift; fi
+		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
+		experimental_retransmit_xdp_interface=${experimental_retransmit_xdp_interface:-$(opt_val "$1")}
+		shift;;
+	--experimental-retransmit-xdp-zero-copy)
+		experimental_retransmit_xdp_zero_copy=${experimental_retransmit_xdp_zero_copy:-1}
+		[ ${experimental_retransmit_xdp_zero_copy} == 1 ] || unset experimental_retransmit_xdp_zero_copy
 		shift;;
 	# jito-solana
 	--commission-bps*)
@@ -668,6 +688,7 @@ set_cmd(){
 	cmd_reload="${cmd_sudo} systemctl daemon-reload"
 	cmd_ssh="${sudo} ssh -o LogLevel=ERROR -o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null"
 	cmd_scp=${cmd_ssh//ssh/scp}
+	cmd_setcap="${cmd_sudo} setcap cap_net_raw,cap_net_admin,cap_bpf,cap_perfmon=p ${validator}"
 	cmd_status="${cmd_sudo} systemctl status ${old_unit:-${unit}}"
 	cmd_start="${cmd_sudo} systemctl start ${unit}"
 	cmd_stop="${cmd_sudo} systemctl stop ${old_unit:-${unit}}"
@@ -3940,7 +3961,14 @@ validator(){
 	# add args from the CLI: flags, options, jito, rakurai
 	local args=()
 	
-	# flags [01], options
+	# agave
+	if [ -n "${bind_address}" ]; then
+		if [ "${bind_address}" == 'auto' ]; then
+			# get the external IP address
+			bind_address=$(get_wanip) || error ${err_wanip}
+		fi
+		is_ip "${bind_address}" && args+=("--bind-address ${bind_address}")
+	fi
 	[ -n "${only_known_rpc}" ]   && args+=("--only-known-rpc")
 	[ -n "${private_rpc}" ]      && args+=("--private-rpc")
 	[ -n "${no_genesis_fetch}" ] && args+=("--no-genesis-fetch")
@@ -3986,16 +4014,13 @@ validator(){
 		fi
 		log "${res}, ${str//FLAG/${flag}}"
 	fi
-	if [ -n "${bind_address}" ]; then
-		if [ "${bind_address}" == 'auto' ]; then
-			# get the external IP address
-			bind_address=$(get_wanip) || error ${err_wanip}
-		fi
-		is_ip "${bind_address}" && args+=("--bind-address ${bind_address}")
-	fi
 	if [ "${accounts_db_hash_threads:-0}" -gt 0 ]; then
 		args+=("--accounts-db-hash-threads ${accounts_db_hash_threads}")
 	fi
+	[ -n "${experimental_poh_pinned_cpu_core}" ]      && args+=("--experimental-poh-pinned-cpu-core ${experimental_poh_pinned_cpu_core}")
+	[ -n "${experimental_retransmit_xdp_cpu_cores}" ] && args+=("--experimental-retransmit-xdp-cpu-cores ${experimental_retransmit_xdp_cpu_cores}")
+	[ -n "${experimental_retransmit_xdp_interface}" ] && args+=("--experimental-retransmit-xdp-interface ${experimental_retransmit_xdp_interface}")
+	[ -n "${experimental_retransmit_xdp_zero_copy}" ] && args+=("--experimental-retransmit-xdp-zero-copy")
 	
 	# jito-solana
 	if jito_enabled; then
@@ -4051,6 +4076,12 @@ validator(){
 				${cmd_fd//CMD/configure fini hugetlbfs}
 				log "${msg_hugepages_freed}"
 			fi
+		fi
+		
+		# if XDP is enabled, grant access for higher level permissions
+		if [ -n "${experimental_retransmit_xdp_cpu_cores}" ]; then
+			log "${cmd_setcap}"
+			${cmd_setcap}
 		fi
 		
 		local cmd="${sudo} ${validator} $@ "$(implode ' ' "${args[@]}")
