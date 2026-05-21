@@ -1907,7 +1907,7 @@ update(){
 	local tags=tags
 	local git=${git_anza}
 	local url=${url_anza}
-	local repo=validator
+	local repo=agave
 	set_git(){
 		if rakurai_enabled; then
 			branch=main
@@ -1988,7 +1988,7 @@ update(){
 		fi
 		
 		if [ ! -d "$REPO/.git" ]; then
-			git -C ${tool%/*} clone ${git} --recurse-submodules
+			git -C ${tool%/*} clone ${git} ${repo} --recurse-submodules
 			cd $REPO
 		else
 			cd $REPO
