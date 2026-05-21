@@ -658,12 +658,12 @@ set_bin(){
 	# jito-relayer
 	relayer=${d}/relayer/${RELAYER_TAG:-active_release}/jito-transaction-relayer
 	
-	# rakurai
+	# re-export environment variables
 	env_keep=
 	if is_tag ${TAG} rakurai; then
 		# export the scheduler binary path
 		[[ ":$LD_LIBRARY_PATH:" == *":${bin}:"* ]] || export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
-		env_keep="LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+		env_keep="--preserve-env=LD_LIBRARY_PATH"
 	fi
 }; set_bin
 # END binaries
@@ -4056,7 +4056,6 @@ validator(){
 	done
 	
 	# run the validator
-	[ -n "${env_keep}" ] && log "${env_keep}"
 	log "${msg_log_start//CLIENT/${client}}" && ok
 	pid_unlock ${lock}
 	
@@ -4084,7 +4083,18 @@ validator(){
 			${cmd_setcap}
 		fi
 		
-		local cmd="${sudo} ${validator} $@ "$(implode ' ' "${args[@]}")
+		# re-export the metrics environment variable
+		if [ -n "$SOLANA_METRICS_CONFIG" ]; then
+			export SOLANA_METRICS_CONFIG=$SOLANA_METRICS_CONFIG
+			log "SOLANA_METRICS_CONFIG=\"$SOLANA_METRICS_CONFIG\""
+			if [ -n "${env_keep}" ]; then
+				env_keep+=',SOLANA_METRICS_CONFIG'
+			else
+				env_keep="--preserve-env=SOLANA_METRICS_CONFIG"
+			fi
+		fi
+		
+		local cmd="${cmd_user} ${env_keep} ${validator} $@ "$(implode ' ' "${args[@]}")
 		log "${cmd}"
 		exec ${cmd}
 	fi
