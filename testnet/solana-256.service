@@ -21,7 +21,7 @@ LimitNOFILE=1000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v4.0.0-rc.0-jito
+Environment=TAG=v4.1.0-beta.1-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
@@ -51,7 +51,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--known-validator eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ \
 	--known-validator 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv \
 	--known-validator FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS \
-	--dynamic-port-range 8000-8025 \
+	--dynamic-port-range 8000-8026 \
 	--rpc-bind-address 0.0.0.0 \
 	--rpc-port 8899 \
 	--full-rpc-api \
