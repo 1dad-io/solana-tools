@@ -714,6 +714,7 @@ export_(){ [ -z "$1" ] && error ${err_arg}; local var=$1; echo ${!var}; }
 get_gov(){ [ "${cpu_gov}" != 'disabled' ] && echo ${cpu_gov} || echo ${cpu_gov_default}; }
 monitor(){ ${cmd_user} ${env_keep} ${validator} -l ${ledger} monitor; }
 on_boot(){ date >${wd_boot} 2>/dev/null; log "$(rm -fv ${oldunit})"; log "$(rm -fv ${tool%/*}/*.pid)"; }
+ps_args(){ echo `ps ax -o args | grep ${1:-.}`; }
 starter(){ if [ -z "${reboot}" ]; then ${cmd_reload} && ${cmd_start} && date >${wd_start} 2>/dev/null; else echo 'no-start'; fi; }
 stopper(){ ${cmd_stop}; if [ -s "${oldunit}" ]; then rm -f ${oldunit} && setup_log ${log}; else echo 'no-leftover'; fi; }
 symlink(){ [[ ! -L "$2" || "$(readlink -f "$2")" != "$(readlink -f "$1")" ]] && ln -sfnv "$1" "$2"; }
@@ -1773,7 +1774,6 @@ wait4e(){
 	done
 }
 
-ps_cmd(){ echo `ps ax -o args | grep ${1:-.}`; }
 wait4r(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	
@@ -1785,7 +1785,7 @@ wait4r(){
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
 		# skip new snapshot check if snapshots are disabled
-		local runtime=$(ps_cmd ${validator##*/})
+		local runtime=$(ps_args ${validator##*/})
 		[[ "${runtime}" =~ --no-(incremental-)?snapshots ]] && cmd+=" --skip-new-snapshot-check"
 	fi
 	
@@ -3108,6 +3108,12 @@ slots(){
 		echo -e "${CC}${first_slot} $(slot_date ${first_slot}) Epoch start${NC}"
 	fi
 	if [ -n "${schedule}" -a -z "${quiet}" ]; then
+		# the local RPC needs --enable-rpc-transaction-history for `block`
+		local u=${rpc_url}
+		local runtime=$(ps_args ${validator##*/})
+		if is_running && [[ "${runtime}" =~ --enable-rpc-transaction-history ]]; then
+			u=localhost
+		fi
 		while read in; do
 			local slot=${in:-0}
 			if (( ${slot} <= ${curr_slot:-0} )); then
@@ -3115,8 +3121,7 @@ slots(){
 					echo -e "${CR}${slot} $(slot_date ${slot}) $(printf '%.9f') ${LR}X${NC}"
 				else
 					echo -e -n "${CG}${slot} $(slot_date ${slot})${NC} "
-					# the local RPC needs --enable-rpc-transaction-history for `block`
-					if json_fetch "block ${slot}" ${rpc_url} -1; then
+					if json_fetch "block ${slot}" ${u} -1; then
 						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pub "${pub}" '[.rewards[] | select(.pubkey==$pub) | .lamports] | add'`
 						local amount=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
 						rewards=`echo "scale=9; ${rewards}+${amount}" | bc | xargs printf '%.9f'`
@@ -3149,9 +3154,14 @@ stakes(){
 	# the local RPC needs account indexing of the stake program, i.e:
 	# --account-index program-id
 	# --account-index-include-key Stake11111111111111111111111111111111111111
+	local u=${rpc_url}
+	local runtime=$(ps_args ${validator##*/})
+	if is_running && [[ "${runtime}" =~ --account-index(=|[[:space:]]+)program-id ]]; then
+		u=localhost
+	fi
 	
 	# get stakes either from the cached JSON or via an RPC call
-	json_fetch "stakes ${vote_acc}" ${rpc_url} ||:
+	json_fetch "stakes ${vote_acc}" ${u} ||:
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && ok
 }
 # END stats
