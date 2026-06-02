@@ -16,9 +16,9 @@ pkg_name=solana-tools
 pkg_version=0.1.0
 
 # ternary operator: cond ? a : b
+if_fn() { if $1; then echo "$3"; else echo "$5"; fi; }
 if_num(){ (( $1 )) && echo "$3" || echo "$5"; }
 if_str(){ [[ $1 ]] && echo "$3" || echo "$5"; }
-if_func(){ if $1; then echo "$3"; else echo "$5"; fi; }
 
 # BEGIN reporting
 is_num(){ [[ "$1" =~ ^[0-9]*\.?[0-9]+$ ]]; }
@@ -724,7 +724,7 @@ truncate(){ [ -f "$1" ] || return 0; sed -e :a -e "\$q;N;$((${2:-10}+1)),\$D;ba"
 # BEGIN common
 assert_allowed(){
 	[ -n "$1" ] || return 0
-	local str=$(if_func is_staked ? staked : unstaked)
+	local str=$(if_fn is_staked ? staked : unstaked)
 	[ "$1" == "${str}" ] || error ${err_not_allowed//COND/$1}
 }
 
@@ -809,6 +809,14 @@ get_wanip(){
 }
 
 is_running(){ is_linux && ${cmd_status} &>/dev/null; }
+is_running_rpc(){
+	local args=$(ps_args ${validator##*/})
+	is_running && [[ "${args}" =~ --account-index(=|[[:space:]]+)program-id ]]
+}
+is_running_rpc_tx_history(){
+	local args=$(ps_args ${validator##*/})
+	is_running && [[ "${args}" =~ --enable-rpc-transaction-history ]]
+}
 
 is_virt(){
 	is_linux || { warn ${err_unsupported_os}; return 1; }
@@ -952,7 +960,7 @@ tx(){
 	local recipient=$1
 	local from_addr=$2
 	local amount=${3:-0}
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# verify `recipient`
@@ -1007,7 +1015,7 @@ precheck(){
 	assert_allowed ${airdrop_allow}
 	
 	# stop if `airdrop_to` >= `airdrop_max`
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_to} 2>&1` || error "${resp}"
 	local b_to=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1023,7 +1031,7 @@ airdrop(){
 	LOG=y
 	
 	# stop if `airdrop_from` <= `airdrop_min`
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${airdrop_from} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1072,7 +1080,7 @@ poll(){
 	LOG=y
 	
 	# get the temporary keypair balance
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	resp=`${solana} ${opt} balance ${f} 2>&1` || error "${resp}"
 	local b_from=`echo "${resp}" | sed 's/[^0-9.]*//g'`
@@ -1114,7 +1122,7 @@ balance(){
 	assert_allowed ${balance_allow}
 	
 	LOG=y
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}" resp
 	
 	# stop if `balance_from` <= `balance_min`
@@ -1758,7 +1766,7 @@ EOF"
 wait4e(){
 	[ -n "$1" ] || return 0
 	
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	while true; do
 		local epoch=$(curr_epoch ${u})
 		local str=${msg_epoch_wait//CURR/${epoch:-0}}
@@ -1785,8 +1793,8 @@ wait4r(){
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
 		# skip new snapshot check if snapshots are disabled
-		local runtime=$(ps_args ${validator##*/})
-		[[ "${runtime}" =~ --no-(incremental-)?snapshots ]] && cmd+=" --skip-new-snapshot-check"
+		local args=$(ps_args ${validator##*/})
+		[[ "${args}" =~ --no-(incremental-)?snapshots ]] && cmd+=" --skip-new-snapshot-check"
 	fi
 	
 	[ -z "${now}" ] && is_running && ${cmd} || echo 'no-wait'
@@ -2428,7 +2436,7 @@ pda_fees(){
 	LOG=y
 	
 	# look `dz_fees_epoch_offset` epochs back
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local offset=${1:-${dz_fees_epoch_offset}}
 	local epoch=$(curr_epoch ${u})
 	is_num ${epoch} || error ${err_arg} # need more specific error here
@@ -3031,7 +3039,7 @@ slots(){
 	local pub=`${keygen} pubkey ${keypair}`
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
-	local u=$(if_func is_running ? localhost : "${rpc_url}")
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local opt="-u ${u}"
 	
 	# https://stackoverflow.com/a/58617630
@@ -3109,11 +3117,7 @@ slots(){
 	fi
 	if [ -n "${schedule}" -a -z "${quiet}" ]; then
 		# the local RPC needs --enable-rpc-transaction-history for `block`
-		local u=${rpc_url}
-		local runtime=$(ps_args ${validator##*/})
-		if is_running && [[ "${runtime}" =~ --enable-rpc-transaction-history ]]; then
-			u=localhost
-		fi
+		local u=$(if_fn is_running_rpc_tx_history ? localhost : "${rpc_url}")
 		while read in; do
 			local slot=${in:-0}
 			if (( ${slot} <= ${curr_slot:-0} )); then
@@ -3154,11 +3158,7 @@ stakes(){
 	# the local RPC needs account indexing of the stake program, i.e:
 	# --account-index program-id
 	# --account-index-include-key Stake11111111111111111111111111111111111111
-	local u=${rpc_url}
-	local runtime=$(ps_args ${validator##*/})
-	if is_running && [[ "${runtime}" =~ --account-index(=|[[:space:]]+)program-id ]]; then
-		u=localhost
-	fi
+	local u=$(if_fn is_running_rpc ? localhost : "${rpc_url}")
 	
 	# get stakes either from the cached JSON or via an RPC call
 	json_fetch "stakes ${vote_acc}" ${u} ||:
