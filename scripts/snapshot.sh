@@ -38,20 +38,14 @@ make_inc(){
 	
 	# make a new snapshot <SLOT>
 	${tool} make-snapshot "$1" \
---hard-fork 403818246 \
+--hard-fork 415524281 \
 --deactivate-feature-gate \
-9onWzzvCzNC2jfhxxeqRgs5q7nFAAKpCUvkj6T6GJK9i \
-6sPDzwyARRExKH52LECxcGoqziH8G7SZofwuxi8Ja331 \
-2GCrNXbzmt4xrwdcKS2RdsLzsgu4V5zHAemW57pcHT6a \
-zkexuyPRdyTVbZqEAREueqL2xvvoBhRgth9xGSc1tMN \
-bn2oPgpkzQPT3tohMaAsMVGjhDmmDa4jCaVPqCFmtxM \
-bn1hKNURMGQaQoEVxahcEAcqiX3NwRs6hgKKNSLeKxH \
-b1sgUiJ3qu7hYm3tNDyyqZNQd6gLGJmJppnLNa93PCQ \
-STk5Xj8hdAx3sTzmtJ3QysKkq6X2A3yj73JtxttiRyk \
-76dHtohc2s5dR3ahJyBxs7eJJVipFkaPdih9CLgTTb4B \
-vcmrbYbiMVKaq1snKP6eCacNDcr6qZvpCNUjmk6gxvZ \
-dcomRRWHXP1FVWPqi9Mm4oxJhF4ehC795SvAtUdA9os \
-5cC3foj77CWun58pC51ebHFUWavHWKarWyR5UUik7dnC \
+  AnAP9zPV4KL7czAPQbFhpDKV2tx7g4UGNbK9wvXwjaRo \
+  6aHuNsUmwSzCEMjrBzBCYaxHAyAcQBjVES92JigHBDuC \
+  B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g \
+  YbbRLkvenrocjGPGyoQE4wjnvYzTgfsk38NFmcYK7a5 \
+  s512oDwgx8hjMnaQjXfqqrZroVj4HvC6TkN3iSSWXCh \
+  Eg7tXEwMZzS98xaZ1YHUbdRHsaYZiCsSaR6sKgxreoaj \
 --enable-capitalization-change
 	
 	# if the new incremental snapshot created in --ledger instead of
