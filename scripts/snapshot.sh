@@ -38,15 +38,8 @@ make_inc(){
 	
 	# make a new snapshot <SLOT>
 	${tool} make-snapshot "$1" \
---hard-fork 415524281 \
---deactivate-feature-gate \
-  AnAP9zPV4KL7czAPQbFhpDKV2tx7g4UGNbK9wvXwjaRo \
-  6aHuNsUmwSzCEMjrBzBCYaxHAyAcQBjVES92JigHBDuC \
-  B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g \
-  YbbRLkvenrocjGPGyoQE4wjnvYzTgfsk38NFmcYK7a5 \
-  s512oDwgx8hjMnaQjXfqqrZroVj4HvC6TkN3iSSWXCh \
-  Eg7tXEwMZzS98xaZ1YHUbdRHsaYZiCsSaR6sKgxreoaj \
---enable-capitalization-change
+--hard-fork 423585904 \
+--incremental
 	
 	# if the new incremental snapshot created in --ledger instead of
 	# --incremental-snapshot-archive-path, move it to the right place
