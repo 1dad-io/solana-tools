@@ -427,27 +427,27 @@ while test $# -gt 0; do
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		full_snapshot_interval_slots=${full_snapshot_interval_slots:-$(opt_val "$1")}
 		shift;;
-	--experimental-poh-pinned-cpu-core*)
+	--poh-pinned-cpu-core*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
-		experimental_poh_pinned_cpu_core=${experimental_poh_pinned_cpu_core:-$(opt_val "$1")}
+		poh_pinned_cpu_core=${poh_pinned_cpu_core:-$(opt_val "$1")}
 		shift;;
-	--experimental-retransmit-xdp-cpu-cores*)
+	--xdp-cpu-cores*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
-		experimental_retransmit_xdp_cpu_cores=${experimental_retransmit_xdp_cpu_cores:-$(opt_val "$1")}
+		xdp_cpu_cores=${xdp_cpu_cores:-$(opt_val "$1")}
 		shift;;
-	--experimental-retransmit-xdp-interface*)
+	--xdp-interface*)
 		opt=$1
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
-		experimental_retransmit_xdp_interface=${experimental_retransmit_xdp_interface:-$(opt_val "$1")}
+		xdp_interface=${xdp_interface:-$(opt_val "$1")}
 		shift;;
-	--experimental-retransmit-xdp-zero-copy)
-		experimental_retransmit_xdp_zero_copy=${experimental_retransmit_xdp_zero_copy:-1}
-		[ ${experimental_retransmit_xdp_zero_copy} == 1 ] || unset experimental_retransmit_xdp_zero_copy
+	--xdp-zero-copy)
+		xdp_zero_copy=${xdp_zero_copy:-1}
+		[ ${xdp_zero_copy} == 1 ] || unset xdp_zero_copy
 		shift;;
 	# jito-solana
 	--commission-bps*)
@@ -4027,10 +4027,10 @@ validator(){
 	if [ "${accounts_db_hash_threads:-0}" -gt 0 ]; then
 		args+=("--accounts-db-hash-threads ${accounts_db_hash_threads}")
 	fi
-	[ -n "${experimental_poh_pinned_cpu_core}" ]      && args+=("--experimental-poh-pinned-cpu-core ${experimental_poh_pinned_cpu_core}")
-	[ -n "${experimental_retransmit_xdp_cpu_cores}" ] && args+=("--experimental-retransmit-xdp-cpu-cores ${experimental_retransmit_xdp_cpu_cores}")
-	[ -n "${experimental_retransmit_xdp_interface}" ] && args+=("--experimental-retransmit-xdp-interface ${experimental_retransmit_xdp_interface}")
-	[ -n "${experimental_retransmit_xdp_zero_copy}" ] && args+=("--experimental-retransmit-xdp-zero-copy")
+	[ -n "${poh_pinned_cpu_core}" ] && args+=("--poh-pinned-cpu-core ${poh_pinned_cpu_core}")
+	[ -n "${xdp_cpu_cores}" ]       && args+=("--xdp-cpu-cores ${xdp_cpu_cores}")
+	[ -n "${xdp_interface}" ]       && args+=("--xdp-interface ${xdp_interface}")
+	[ -n "${xdp_zero_copy}" ]       && args+=("--xdp-zero-copy")
 	
 	# jito-solana
 	if jito_enabled; then
@@ -4088,7 +4088,7 @@ validator(){
 		fi
 		
 		# if XDP is enabled, grant access for higher level permissions
-		if [ -n "${experimental_retransmit_xdp_cpu_cores}" ]; then
+		if [ -n "${xdp_cpu_cores}" ]; then
 			log "${cmd_setcap}"
 			${cmd_setcap}
 		fi
