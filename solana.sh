@@ -3955,10 +3955,6 @@ validator(){
 	sys_tuner
 	[ "${cpu_gov}" != 'disabled' ] && cpu_tuner ${cpu_gov}
 	
-	# the restart window must have already been passed, so turn it off
-	# for trim and relayer functions called from inside this function
-	now=1 && trim # trim all mounted FS to catch up faster
-	
 	# jito-relayer
 	# check if relayer is enabled and required by the systemd unit file
 	if [ -f "${relayer}" ] && relayer_required; then
