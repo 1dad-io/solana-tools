@@ -3036,7 +3036,7 @@ optimistic_slot(){
 # slots.db: slot, epoch, timestamp, rewards, skipped=Y/N
 strip0(){ echo $1 | sed '/\./ s/\.\{0,1\}0\{1,\}$//'; }
 slots(){
-	local pub=`${keygen} pubkey ${keypair}`
+	local pub=`${keygen} pubkey ${staked}`
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
 	local u=$(if_fn is_running ? localhost : "${rpc_url}")
