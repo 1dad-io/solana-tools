@@ -2513,6 +2513,7 @@ dz_setup(){
 	sudo mkdir -p ${d}
 	sudo tee "${d}/override.conf" >/dev/null <<EOF
 [Service]
+TimeoutStartSec=infinity
 ExecStart=
 ExecStartPre=/bin/bash -c 'until curl -fsS -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}" http://localhost:${rpc_port} >/dev/null; do sleep 2; done'
 ExecStart=/usr/bin/doublezerod -sock-file /run/doublezerod/doublezerod.sock -env ${moniker}
