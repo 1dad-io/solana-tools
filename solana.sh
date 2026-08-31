@@ -2478,6 +2478,7 @@ pda_fees(){
 	unset LOG
 }
 
+dz_restart(){ ${cmd_reload} && ${cmd_dz_restart}; }
 dz_setup(){
 	# check if it's already installed
 	if [ -f "${dz}" ]; then
@@ -2518,7 +2519,6 @@ ExecStart=
 ExecStartPre=/bin/bash -c 'until curl -fsS -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}" http://localhost:${rpc_port} >/dev/null; do sleep 2; done'
 ExecStart=/usr/bin/doublezerod -sock-file /run/doublezerod/doublezerod.sock -env ${moniker}
 EOF
-	sudo systemctl daemon-reload && ${cmd_dz_restart}
 	${dz} config set --env ${moniker} >/dev/null
 	info "${msg_pkg_configured//PKG/${dz_systemd}} for ${moniker}"
 	
@@ -2552,6 +2552,8 @@ dz(){
 		dz_init;;
 	setup)
 		dz_setup;;
+	restart)
+		dz_restart;;
 	user)
 		dz_user_list;;
 	*)
@@ -2829,7 +2831,7 @@ setup(){
 		local f=${tool%/*}/${moniker%%[-]*}/${systemd}.service
 		[ -s "${f}" ] || error ${err_file_read//FILE/${f}}
 		sudo ln -sf ${f} /etc/systemd/system/${systemd}.service
-		sudo systemctl daemon-reload && sudo systemctl enable ${systemd}
+		${cmd_reload} && sudo systemctl enable ${systemd}
 		info ${msg_pkg_enabled//PKG/${systemd}.service}
 		
 		# remove unused systemd unit file(s)
@@ -2887,7 +2889,7 @@ setup(){
 			local f=${tool%/*}/${moniker%%[-]*}/${relayerd}.service
 			[ -s "${f}" ] || error ${err_file_read//FILE/${f}}
 			sudo ln -sf ${f} /etc/systemd/system/${relayerd}.service
-			sudo systemctl daemon-reload && sudo systemctl enable ${relayerd}
+			${cmd_reload} && sudo systemctl enable ${relayerd}
 			info ${msg_pkg_enabled//PKG/${relayerd}.service}
 		fi
 	fi
