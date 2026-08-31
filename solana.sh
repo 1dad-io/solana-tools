@@ -2511,7 +2511,12 @@ dz_setup(){
 	# configure environment
 	local d=/etc/systemd/system/doublezerod.service.d
 	sudo mkdir -p ${d}
-	echo -e "[Service]\nExecStart=\nExecStart=/usr/bin/doublezerod -sock-file /run/doublezerod/doublezerod.sock -env ${moniker}" | sudo tee ${d}/override.conf >/dev/null
+	sudo tee "${d}/override.conf" >/dev/null <<EOF
+[Service]
+ExecStart=
+ExecStartPre=/bin/bash -c 'until curl -fsS -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}" http://localhost:${rpc_port} >/dev/null; do sleep 2; done'
+ExecStart=/usr/bin/doublezerod -sock-file /run/doublezerod/doublezerod.sock -env ${moniker}
+EOF
 	sudo systemctl daemon-reload && ${cmd_dz_restart}
 	${dz} config set --env ${moniker} >/dev/null
 	info "${msg_pkg_configured//PKG/${dz_systemd}} for ${moniker}"
