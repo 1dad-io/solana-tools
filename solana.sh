@@ -102,10 +102,8 @@ info(){
 	echo -e "${LN}${fn}:${NC} ${*:-${str}}"
 }
 debug(){
-	local fn=${FUNCNAME[1]} str=${FUNCNAME[0]^}
+	local str=${FUNCNAME[0]^}
 	[ -n "$LOG" ] && log "${*:-${str}}" ${FUNCNAME[0]}
-	[ -n "$SMS" ] && sms "${*:-${str}}" ${fn}
-	echo -e "${LN}${fn}:${NC} ${*:-${str}}"
 }
 # END reporting
 
@@ -686,8 +684,6 @@ set_cmd(){
 	cmd_cpufreq="${cmd_sudo} cpupower -c CORE frequency-set -r -g GOV"
 	cmd_keygen="${keygen} new --no-bip39-passphrase -s"
 	cmd_reload="${cmd_sudo} systemctl daemon-reload"
-	cmd_ssh="${sudo} ssh -o LogLevel=ERROR -o StrictHostKeychecking=no -o UserKnownHostsFile=/dev/null"
-	cmd_scp=${cmd_ssh//ssh/scp}
 	cmd_setcap="${cmd_sudo} setcap cap_net_raw,cap_net_admin,cap_bpf,cap_perfmon=p ${validator}"
 	cmd_status="${cmd_sudo} systemctl status ${old_unit:-${unit}}"
 	cmd_start="${cmd_sudo} systemctl start ${unit}"
@@ -1788,7 +1784,7 @@ wait4r(){
 	if [ -n "$1" ]; then
 		# skip new snapshot check and allow 100% delinquency when
 		# --min-idle-time value is overridden by the function arg
-		# used by trim(), restart_relayer(), txtower()
+		# used by trim, restart_relayer, txtower
 		local cmd="${cmd_wait} --max-delinquent-stake 100 --min-idle-time $1 --skip-new-snapshot-check"
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
@@ -2761,7 +2757,7 @@ setup(){
 		for f in /etc/sudoers /etc/sudoers.d/90-cloud-init-users; do
 			if sudo test -f "${f}"; then
 				info ${msg_sudo_revoke//FILE/${f}}
-				sudo sed -e "/${USER}[[:space:]]*ALL=/ s/^#*/#/" -i --follow-symlinks ${f}
+				sudo sed -e "/$USER[[:space:]]*ALL=/ s/^#*/#/" -i --follow-symlinks ${f}
 			fi
 		done
 		
@@ -3217,6 +3213,113 @@ usage(){
 # END usage
 
 # BEGIN watchdog
+ssh_opts=(
+	-o LogLevel=ERROR
+	-o ControlMaster=auto
+	-o ControlPersist=yes
+	-o BatchMode=yes
+	-o ConnectTimeout=10
+	-o ServerAliveInterval=10
+	-o ServerAliveCountMax=3
+	-o StrictHostKeyChecking=no
+	-o UserKnownHostsFile=/dev/null
+)
+ssh_control_path(){
+	local user=$1 host=$2 port=$3
+	printf "/tmp/ssh-control-$USER/%s@%s:%s" "${user}" "${host}" "${port}"
+}
+ssh_check(){
+	local user=$1 host=$2 port=$3
+	local path=$(ssh_control_path "${user}" "${host}" "${port}")
+	${sudo} ssh -O check -o ControlPath="${path}" -p "${port}" "${user}@${host}" >/dev/null 2>&1
+}
+ssh_start(){
+	local user=$1 host=$2 port=$3
+	local path=$(ssh_control_path "${user}" "${host}" "${port}")
+	local d=$(dirname "${path}")
+	${sudo} mkdir -p "${d}"
+	${sudo} chmod 700 "${d}"
+	${sudo} rm -f "${path}"
+	${sudo} ssh -M -N -f "${ssh_opts[@]}" -o ControlPath="${path}" -p "${port}" "${user}@${host}" >/dev/null 2>&1
+}
+ssh_open(){
+	local user=$1 host=$2 port=$3
+	local target="${user}@${host}"
+	local attempt=1 max_attempts=5 sleep_s=2
+	
+	if ssh_check "${user}" "${host}" "${port}"; then
+		debug "SSH master already open: ${target}:${port}"
+		return 0
+	else
+		log "SSH master closed, re-opening ${target}:${port}"
+	fi
+	
+	while [ "${attempt}" -le "${max_attempts}" ]; do
+		ssh_start "${user}" "${host}" "${port}" && break
+		
+		log "failed to start SSH master for ${target}:${port}, attempt ${attempt}/${max_attempts}"
+		if [ "${attempt}" -eq "${max_attempts}" ]; then
+			warn "failed to start SSH master for ${target}:${port} after ${max_attempts} attempts"
+			return 1
+		fi
+		
+		sleep "${sleep_s}"
+		attempt=$((attempt+1))
+		
+		# capped backoff: 2, 4, 8, 10
+		if [ "${sleep_s}" -lt 10 ]; then
+			sleep_s=$((sleep_s*2))
+			[ "${sleep_s}" -gt 10 ] && sleep_s=10
+		fi
+	done
+	
+	ssh_check "${user}" "${host}" "${port}" || {
+		warn "SSH master started but control check failed for ${target}:${port}"
+		return 1
+	}
+	
+	log "SSH master opened: ${target}:${port}"
+}
+ssh_close() {
+	local user=$1 host=$2 port=$3
+	local path=$(ssh_control_path "${user}" "${host}" "${port}")
+	local target="${user}@${host}"
+	
+	# no socket at all: nothing to close
+	if [ ! -S "${path}" ]; then
+		log "SSH master already closed: ${target}:${port}"
+		return 0
+	fi
+	
+	# socket exists, but master may be dead or stale
+	if ssh_check "${user}" "${host}" "${port}"; then
+		${sudo} ssh -O exit -o ControlPath="${path}" -p "${port}" "${target}" >/dev/null 2>&1 || true
+		log "SSH master closed: ${target}:${port}"
+	else
+		log "SSH master closed, removing stale socket: ${target}:${port}"
+	fi
+	
+	# always remove local socket after close attempt
+	${sudo} rm -f "${path}" 2>/dev/null || true
+}
+ssh_(){
+	local user=$1 host=$2 port=$3; shift 3
+	local path=$(ssh_control_path "${user}" "${host}" "${port}")
+	local target="${user}@${host}"
+	ssh_open "${user}" "${host}" "${port}" || return 1
+	timeout 20s ${sudo} ssh "${ssh_opts[@]}" -o ControlPath="${path}" -p "${ssh_port}" "${target}" "$@" 2>&1
+}
+scp_(){
+	local user=$1 host=$2 port=$3 src=$4 dest=$5
+	local path=$(ssh_control_path "${user}" "${host}" "${port}")
+	local target="${user}@${host}"
+	ssh_open "${user}" "${host}" "${port}" || return 1
+	timeout 20s ${sudo} scp "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
+}
+get_tower(){
+	local pub=`${keygen} pubkey ${staked}`
+	echo $(ls -1t "${tower}"/tower*-"${pub}".bin 2>/dev/null | head -n1)
+}
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	[ -n "${ssh_host}" ]   || error ${err_bind} # required to transfer the tower
@@ -3228,33 +3331,28 @@ txtower(){
 	is_staked || error ${err_transitioned}
 	
 	# check if the remote unstaked validator is healthy
-	local bindip=${ssh_host}
+	local host=${ssh_host}
 	local alias=$(mkalias ${ssh_bind})
 	local errmsg=${err_rpc_health//PUBKEY/${alias}}
 	if [ -n "$1" ]; then
-		bindip=$1 # overridden by the function argument
-		if [ "${bindip}" == N ]; then
+		host=$1 # overridden by the function argument
+		if [ "${host}" == N ]; then
 			error ${errmsg}
-		elif is_num ${bindip}; then
+		elif is_num ${host}; then
 			local str=${err_rpc_behind//PUBKEY/${alias}}
-			error ${str//SLOTS/${bindip}}
-		elif ! is_ip ${bindip}; then
-			error ${err_host//HOST/${bindip}}
+			error ${str//SLOTS/${host}}
+		elif ! is_ip ${host}; then
+			error ${err_host//HOST/${host}}
 		fi
 	elif [ "$(json_rpc ${ssh_host} 'getHealth')" != 'ok' ]; then
 		[ "${force}" == 1 ] && warn ${errmsg} ${tip_forced} || error ${errmsg} ${tip_force}
 	fi
 	
 	# check if the tower file exists
-	local pub=`${keygen} pubkey ${staked}`
-	local f=${tower}/tower-{,1_9-}${pub}.bin
+	local f=$(get_tower)
 	[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}}
 	
 	# make up commands
-	local ssh_tower=`${cmd_ssh} -p ${ssh_port} ${ssh_user}@${bindip} ${ssh_tool} export tower`
-	[ -z "${ssh_tower}" ] && error ${err_tower_get}
-	local cmd_tx="${cmd_scp} -P ${ssh_port} ${tower}/tower*-${pub}.bin ${ssh_user}@${bindip}:${ssh_tower}"
-	local cmd_rx="${cmd_ssh} -p ${ssh_port} ${ssh_user}@${bindip} ${ssh_tool} rxtower"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${unstaked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
@@ -3263,12 +3361,13 @@ txtower(){
 	fi
 	[ "${unstaked%/*}" == "${keypair%/*}" ] && local unstaked=${unstaked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${unstaked} ${keypair}"
+	local args=()
 	if is_dryrun; then
 		cmd_ln="echo '${unstaked}' -> '${keypair}'"
-		cmd_rx+=' --dryrun'
+		args+=('--dryrun')
 		local tip=" ${tip_dryrun}"
 	fi
-	[ "${force}" == 1 ] && cmd_rx+=' --force'
+	[ "${force}" == 1 ] && args+=('--force')
 	
 	# run the transition
 	# set-identity is run after ln here because it can potentionally fail
@@ -3276,19 +3375,21 @@ txtower(){
 	# this reason, FS trim should also be disabled for a quick catch-up
 	${sudo} touch ${trimmed}
 	
-	local remote="${bindip}:${ssh_tower}"
-	local res str status=0 slots=${tower_slot_delay} delay=${tower_delay}
+	local res str ssh_tower status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
-	wait4r ${min_idle_time} \
-	&& log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
-	&& { SECONDS=0; res=`${cmd_tx} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_prepare//REMOTE/${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
+	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
+	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" ${ssh_tower}` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_prepared//REMOTE/${host}:${ssh_tower}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_delay//SLOTS/${slots}}; log "${str//TIME/${delay}s}"; sleep ${delay}; } \
-	&& { SECONDS=0; res=`${cmd_tx} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_release//REMOTE/${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
-	&& { SECONDS=0; res=`${cmd_rx} 2>&1` || status=1; log "${res} by ${bindip} in $(elapsed $SECONDS)"; }
+	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
+	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" ${ssh_tower}` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_released//REMOTE/${host}:${ssh_tower}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
+		log "${res} by ${host} in $(elapsed $SECONDS)"; }
+	
 	local elapsed=$(($(date +%s)-$started))
 	local err=$(fd_sanitize $(echo "${res}" | grep -E -i 'err|failed'))
 	log "${msg_log_stop//TIME/$(elapsed $elapsed)}" && [ ${status} -eq 0 ] && ok || error ${err}
@@ -3302,8 +3403,7 @@ rxtower(){
 	[ -s "${staked}" ]     || error ${err_file_read//FILE/${staked}}
 	
 	# make up commands
-	local pub=`${keygen} pubkey ${staked}`
-	local f=${tower}/tower-{,1_9-}${pub}.bin
+	local f=$(get_tower)
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
@@ -3318,7 +3418,7 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# check if the tower file exists and isn't outdated
+	# check if the tower file exists and it isn't outdated
 	if [ ! -s "${f}" ]; then
 		local str=${err_tower_missing//FILE/${f}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
@@ -3467,12 +3567,14 @@ watchdog(){
 	off)
 		# init_wd is disabled to preserve the last event
 		save_wd 'D'
+		[ -n "${ssh_host}" ] && ssh_close "${ssh_user}" "${ssh_host}" "${ssh_port}"
 		ok ${msg_wd_disabled}
 		return 0;;
 	on)
 		[ -f "${wd_boot}" ] && ${sudo} rm -f ${wd_boot}
 		init_wd
 		save_wd 'N'
+		[ -n "${ssh_host}" ] && ssh_open "${ssh_user}" "${ssh_host}" "${ssh_port}"
 		ok ${msg_wd_enabled}
 		return 0;;
 	status)
