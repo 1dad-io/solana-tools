@@ -1642,7 +1642,7 @@ menu_version(){
 		fi
 		
 		# get validators either from the cached JSON or via an RPC call
-		if json_fetch 'validators' ${rpc_url}; then
+		if json_fetch 'validators' ${rpc_url} &>/dev/null; then
 			get_pkg jq
 			local max_stake=0 max_stake_v=${version} v
 			local versions=(`cat ${validators} | jq '.stakeByVersion | to_entries[] | [.key] | @tsv' | grep -v unknown | sed -e 's/"//g' | sort -t. -k 1,1nr -k 2,2nr -k 3,3nr`)
