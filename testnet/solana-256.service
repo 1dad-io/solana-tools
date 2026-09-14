@@ -1,4 +1,4 @@
-# The known-validators on testnet are:
+# The known validators on testnet are:
 # 5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on - Solana Labs
 # dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs  - MonkeDAO
 # Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN - Certus One
@@ -50,7 +50,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--known-validator Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN \
 	--known-validator eoKpUABi59aT4rR9HGS3LcMecfut9x7zJyodWWP43YQ \
 	--known-validator 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv \
-	--known-validator FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS \
 	--dynamic-port-range 8000-8026 \
 	--rpc-bind-address 0.0.0.0 \
 	--rpc-port 8899 \
