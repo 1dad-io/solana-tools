@@ -38,7 +38,7 @@ make_inc(){
 	
 	# make a new snapshot <SLOT>
 	${tool} make-snapshot "$1" \
---hard-fork 440004501
+--hard-fork 440004500
 	
 	# if the new incremental snapshot created in --ledger instead of
 	# --incremental-snapshot-archive-path, move it to the right place
