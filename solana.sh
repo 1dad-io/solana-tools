@@ -131,7 +131,8 @@ is_cidr(){
 	local ip=$((${A:-0}*256**3 + ${B:-0}*256**2 + ${C:-0}*256 + ${D:-0}))
 	[ "${ip}" -gt 0 -a $((${ip} % 2**(32-${N:-0}))) = 0 ]
 }
-is_ip(){ [[ "$1" =~ ^(0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))\.){3}0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))$ ]]; }
+is_ip() { [[ "$1" =~ ^(0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))\.){3}0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))$ ]]; }
+is_url(){ [[ "$1" =~ ^https?:// ]]; }
 is_pub(){ local base58='[1-9A-HJ-NP-Za-km-z]'; [[ "$1" =~ ^${base58}{32,44}$ ]]; }
 is_main(){ for i in {1..2}; do [ "${FUNCNAME[$i]}" == 'main' ] && return 0; done; return 1; }
 is_user(){ [[ "$1" =~ ^[[:lower:]_][[:lower:][:digit:]_-]{2,15}$ ]]; }
@@ -740,8 +741,8 @@ cp_conf(){
 }
 
 curr_epoch(){
-	local opt="-u ${1:-${moniker}}"
-	local epoch=`${solana} ${opt} epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
+	[ -n "$1" ] || error ${err_arg}
+	local epoch=`${solana} -u $1 epoch --commitment finalized 2>/dev/null` || error ${err_rpc_connect}
 	echo ${epoch}
 }
 
@@ -1264,10 +1265,25 @@ file_fetch(){
 	fi
 }
 
+json_url(){
+	local url
+	case "$1" in
+	devnet|testnet|mainnet*)
+		url=${url_rpc//MONIKER/$1};;
+	*)
+		if is_url "$1"; then
+			url="$1"
+		else
+			url="http://$1"
+			[[ "${url}" =~ :[0-9]+$ ]] || url="${url}:${rpc_port}"
+		fi;;
+	esac
+	echo ${url}
+}
+
 json_rpc(){
 	local res; res=$(get_pkg curl jq) || log "${res}" # isolated
-	local host=${1%%:*} port=${1##*:}
-	[ "${host}" == "${port}" ] && port=${rpc_port}
+	local url=$(json_url "$1")
 	local data="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\"${3:+,\"params\":$3}}"
 	local resp=`curl --connect-timeout ${rpc_conn_timeout} \
 		--fail \
@@ -1277,7 +1293,7 @@ json_rpc(){
 		--retry-delay ${rpc_retry_delay} \
 		--retry-max-time ${rpc_retry_max_time} \
 		--retry ${rpc_retry} \
-		-s -X POST -H "Content-Type: application/json" -d ${data} http://${host}:${port}`
+		-s -X POST -H "Content-Type: application/json" -d "${data}" "${url}"`
 	if [ -n "${resp}" ]; then
 		local res=`echo "${resp}" | jq -r .result`
 		local err=`echo "${resp}" | jq -r .error`
@@ -1288,21 +1304,22 @@ json_rpc(){
 }
 
 json_fetch(){
+	[ $# -ge 2 ] || error ${err_arg_count}
 	local command=${1%% *}
 	[[ "${command}" =~ ^[a-z]+(-[a-z]+)*$ ]] || error ${err_arg}
-	local rpc=$2
-	local opt="-u ${rpc:-${moniker}}"
+	local u="$2"
+	local opt="-u ${u}"
 	local out=${!command}
 	local ttl=${3:-${cache_ttl}}
 	local th_met=0
 	
-	case ${command} in
+	case "${command}" in
 	block)
 		[[ "$1" =~ [0-9]+ ]] || error ${err_arg}
 		local slot=${BASH_REMATCH[0]}
 		out=${out//SLOT/${slot}};;
 	stakes)
-		local epoch=$(curr_epoch ${rpc})
+		local epoch=$(curr_epoch ${u})
 		is_num ${epoch} || error ${err_arg} # need more specific error here
 		out=${out//EPOCH/${epoch}};;
 	esac
@@ -1319,9 +1336,9 @@ json_fetch(){
 		if ! (
 			set -o pipefail
 			{
-				if [ "${command}" == 'block' ]; then
+				if [ "${command}" == block ]; then
 					local params="[${slot},{\"encoding\":\"base64\",\"transactionDetails\":\"full\",\"rewards\":true,\"maxSupportedTransactionVersion\":1}]"
-					json_rpc "${rpc}" getBlock "${params}"
+					json_rpc "${u}" getBlock "${params}"
 				else
 					${solana} ${opt} $1 --output=json 2>/dev/null
 				fi
@@ -2778,7 +2795,7 @@ setup(){
 		update # run the installer
 		
 		# configure the CLI
-		${solana} config set --url ${url_rpc}
+		${solana} config set --url ${url_rpc//MONIKER/${moniker}}
 		
 		# ensure the vote_acc keypair exists
 		local f=${vote_acc}
