@@ -1264,21 +1264,45 @@ file_fetch(){
 	fi
 }
 
+json_rpc(){
+	local res; res=$(get_pkg curl jq) || log "${res}" # isolated
+	local host=${1%%:*} port=${1##*:}
+	[ "${host}" == "${port}" ] && port=${rpc_port}
+	local data="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\"${3:+,\"params\":$3}}"
+	local resp=`curl --connect-timeout ${rpc_conn_timeout} \
+		--fail \
+		--location \
+		--max-time ${rpc_max_time} \
+		--retry-connrefused \
+		--retry-delay ${rpc_retry_delay} \
+		--retry-max-time ${rpc_retry_max_time} \
+		--retry ${rpc_retry} \
+		-s -X POST -H "Content-Type: application/json" -d ${data} http://${host}:${port}`
+	if [ -n "${resp}" ]; then
+		local res=`echo "${resp}" | jq -r .result`
+		local err=`echo "${resp}" | jq -r .error`
+		[ "${res}" != null ] && echo "${res}" || { [ "${err}" != null ] && echo "${err}"; }
+	else
+		error ${err_rpc_connect}
+	fi
+}
+
 json_fetch(){
 	local command=${1%% *}
 	[[ "${command}" =~ ^[a-z]+(-[a-z]+)*$ ]] || error ${err_arg}
-	local opt="-u ${2:-${moniker}}"
+	local rpc=$2
+	local opt="-u ${rpc:-${moniker}}"
 	local out=${!command}
 	local ttl=${3:-${cache_ttl}}
 	local th_met=0
 	
 	case ${command} in
 	block)
-		local slot=0
-		[[ "$1" =~ [0-9]+ ]] && slot=${BASH_REMATCH[0]} || error ${err_arg}
+		[[ "$1" =~ [0-9]+ ]] || error ${err_arg}
+		local slot=${BASH_REMATCH[0]}
 		out=${out//SLOT/${slot}};;
 	stakes)
-		local epoch=$(curr_epoch $2)
+		local epoch=$(curr_epoch ${rpc})
 		is_num ${epoch} || error ${err_arg} # need more specific error here
 		out=${out//EPOCH/${epoch}};;
 	esac
@@ -1292,37 +1316,21 @@ json_fetch(){
 	if [ ! -f "${out}" -o "${th_met}" == 1 ]; then
 		local d=${out%/*} tmp=${out}.new
 		[ "${d}" == "${out}" -o -d "${d}" ] || ${sudo} mkdir -p ${d}
-		set -o pipefail
-		if ! ${solana} ${opt} $1 --output=json 2>/dev/null | ${sudo} tee ${tmp} >/dev/null; then
-			warn ${err_json_fetch//FILE/${out}}
+		if ! (
+			set -o pipefail
+			{
+				if [ "${command}" == 'block' ]; then
+					local params="[${slot},{\"encoding\":\"base64\",\"transactionDetails\":\"full\",\"rewards\":true,\"maxSupportedTransactionVersion\":1}]"
+					json_rpc "${rpc}" getBlock "${params}"
+				else
+					${solana} ${opt} $1 --output=json 2>/dev/null
+				fi
+			} | ${sudo} tee "$tmp" >/dev/null
+		); then
+			warn "${err_json_fetch//FILE/$out}"
 			return 1
-		elif [ -s "${tmp}" ]; then
-			${sudo} mv -f "${tmp}" "${out}" # non-empty file
 		fi
-		set +o pipefail
-	fi
-}
-
-json_rpc(){
-	local res; res=$(get_pkg curl jq) || log "${res}" # isolated
-	local host=${1%%:*} port=${1##*:} method=$2
-	[ "${host}" == "${port}" ] && port=${rpc_port}
-	local data='{"jsonrpc":"2.0","id":1,"method":"METHOD"}'
-	local resp=`curl --connect-timeout ${rpc_conn_timeout} \
-		--fail \
-		--location \
-		--max-time ${rpc_max_time} \
-		--retry-connrefused \
-		--retry-delay ${rpc_retry_delay} \
-		--retry-max-time ${rpc_retry_max_time} \
-		--retry ${rpc_retry} \
-		-s -X POST -H "Content-Type: application/json" -d ${data//METHOD/${method}} http://${host}:${port}`
-	if [ -n "${resp}" ]; then
-		local res=`echo "${resp}" | jq -r .result`
-		local err=`echo "${resp}" | jq -r .error`
-		[ "${res}" != null ] && echo "${res}" || { [ "${err}" != null ] && echo "${err}"; }
-	else
-		error ${err_rpc_connect}
+		[[ -s $tmp ]] && ${sudo} mv -f "$tmp" "$out" # non-empty file
 	fi
 }
 # END json-rpc
