@@ -232,7 +232,7 @@ read_conf(){
 	min_idle_time=${min_idle_time:-10}
 	poll_interval=${poll_interval:-1}
 	relayerd=${relayerd:-relayer}
-	# systemd defaults to the RAM profile
+	# systemd defaults to RAM profile
 	tower_slot_delay=${tower_slot_delay:-0} # slots
 	tower_slot_speed=${tower_slot_speed:-2.5}
 	tower_ttl_slots=${tower_ttl_slots:-256}
@@ -263,7 +263,7 @@ read_conf(){
 	sudoers=${sudoers:-sudo}
 	
 	# dependencies
-	# `block`,`stakes`,`validators` are named after the RPC methods
+	# `block`,`stakes`,`validators` represent Solana CLI subcommands
 	local path=${tool%/*}/${moniker%%[-]*}
 	block=${path}/data/blocks/SLOT.json
 	stakes=${path}/data/stakes/EPOCH.json
@@ -359,8 +359,6 @@ while test $# -gt 0; do
 		if ! grep -q '=' <<< "$1"; then shift; fi
 		[ $# -gt 0 -a "$1" != '--' ] || error ${err_arg_missing//OPT/${opt}}
 		rpc_url=$(opt_val "$1")
-		# TODO: extract moniker from URL and update config deps if modified
-		# moniker=$(get_moniker ${rpc_url})
 		shift;;
 	-v*|--version*)
 		opt=$1
@@ -521,7 +519,7 @@ while test $# -gt 0; do
 		client_mode=${client_mode:-$(opt_val "$1")}
 		shift;;
 	# overrides END
-	--) # the end of the options
+	--) # end of options
 		shift
 		pos_args+=("$@")
 		break;;
@@ -551,7 +549,7 @@ while test $# -gt 0; do
 			[ "$1" == 'export' ] && action=${1}_ || action=${1//-/_}
 			[ "$1" == 'wait-for-restart' ] && action=wait4r
 			if [[ "txtower" == *${1}* ]]; then
-				# we need the watchdog to be idle here
+				# we need watchdog to be idle here
 				PIDFILE=${tool%/*}/watchdog.pid
 				PIDWAIT=${lock_timeout}
 			fi
@@ -565,7 +563,7 @@ done
 # firedancer
 [ "${fd}" == 1 ]   && action="fd_${action}"
 [ "${poll}" == 1 ] && action=poll
-# restore the positional arguments
+# restore positional arguments
 set -- "${pos_args[@]}"
 unset pos_args opt
 # END options-cli
@@ -575,7 +573,7 @@ get_env(){ cat $FILE | sed -n "s/.*$1=\(\)/\1/p" | awk '{print $1}' | tr -d '"';
 get_opt(){ local v=`cat $FILE | sed -n "s/--$1\(=\|[[:space:]]\)\+//p"`; echo ${v} | awk -v fb="$2" '{print ($1==""?fb:$1)}'; }
 get_systemd(){
 	local files=(${tool%/*}/${moniker%%[-]*}/solana*.service)
-	echo `basename ${files[0]} .service` # pick up the first
+	echo `basename ${files[0]} .service` # pick the first
 }
 read_systemd(){
 	FILE=/etc/systemd/system/${systemd}.service
@@ -660,7 +658,7 @@ set_bin(){
 	# re-export environment variables
 	env_keep=
 	if is_tag ${TAG} rakurai; then
-		# export the scheduler binary path
+		# export scheduler binary path
 		[[ ":$LD_LIBRARY_PATH:" == *":${bin}:"* ]] || export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}${bin}"
 		env_keep="--preserve-env=LD_LIBRARY_PATH"
 	fi
@@ -733,10 +731,10 @@ cp_conf(){
 	# back up a target file
 	sudo cp -v ${no_clobber} ${2:-$1}{,~} 2>/dev/null || :
 	
-	# compare source and target files
+	# compare the source and target files
 	sudo cmp -s ${f} ${2:-$1} && local flags='-uv' || local flags='-v'
 	
-	# return 0 if the file copied, 1 otherwise
+	# return 0 if the source file copied, 1 otherwise
 	[[ "$(sudo cp ${flags} ${f} ${2:-$1} 2>/dev/null)" =~ \-\> ]]
 }
 
@@ -995,7 +993,7 @@ tx(){
 precheck(){
 	[ -z "${precheck}" ] && precheck=1 || return 0
 	
-	# verify the cluster
+	# verify `moniker`
 	[ "${moniker}" != 'testnet' -a "${moniker}" != 'devnet' ] && error ${err_unsupported_cluster}
 	
 	# verify `airdrop_to`
@@ -1177,7 +1175,7 @@ bind(){
 	[ -s "${staked}" ]     || error ${err_file_read//FILE/${staked}}
 	[ -s "${unstaked}" ]   || error ${err_file_read//FILE/${unstaked}}
 	
-	# get `bindip` from the CLI
+	# get `bindip` from CLI
 	while ! is_ip ${bindip}; do
 		read -p "$(info ${msg_bind_prompt//ARG/IP}) "
 		bindip=$REPLY
@@ -1187,7 +1185,7 @@ bind(){
 	
 	# determine if we're running the staked validator
 	if is_staked && [ -z "${pub}" ]; then
-		# get the binding server pubkey via the RPC
+		# get the binding server pubkey via RPC
 		local res
 		if res=$(json_rpc ${bindip} 'getIdentity'); then
 			pub=`echo ${res} | jq -r .identity`
@@ -1201,13 +1199,13 @@ bind(){
 	done
 	[ "${noecho}" == 0 ] && info ${msg_bind_id//PUBKEY/${pub}}
 	
-	# modify the provided ssh config
+	# modify the provided SSH config
 	f=${tool%/*}/etc/ssh/sshd_config
 	grep -q 'PermitRootLogin' ${f} && \
 	sed -i --follow-symlinks "/^[^#]*PermitRootLogin[[:space:]]*no.*/c\PermitRootLogin yes" ${f} || \
 	echo "PermitRootLogin yes" | tee -a ${f}
 	
-	# copy over the provided config & restart ssh
+	# copy over the provided config & restart SSH
 	cp_conf /etc/ssh/sshd_config && sudo systemctl restart ssh
 	info ${msg_pkg_configured//PKG/sshd}
 	
@@ -1216,7 +1214,7 @@ bind(){
 		# cleanup
 		ufw_purge_unbound ${bindip}
 		
-		# allow ssh & solana_rpc
+		# allow SSH and solana_rpc
 		get_pkg ufw
 		local port=`grep Port /etc/ssh/sshd_config | awk '{print $2}'`
 		sudo ufw allow from ${bindip} to any port ${port:-22} proto tcp comment 'bind_ssh'
@@ -1574,7 +1572,7 @@ menu_useradd(){
 		menu_passwd "${user}"
 	fi
 	
-	# check if the script is run by another user
+	# check if the script is running under another user
 	if [ "${user}" != "$USER" ]; then
 		local home=`getent passwd "${user}" | cut -d: -f6`
 		local dest=${home}/`basename ${tool%/*}`
@@ -1582,9 +1580,9 @@ menu_useradd(){
 		# check if the home directories differ
 		local f=$HOME/.ssh/authorized_keys
 		if [ "${home}" != "$HOME" ]; then
-			# copy existing ssh keys from the current user home directory;
+			# copy existing SSH keys from the current user home directory;
 			# any other files like authorized_keys2 are explicitly omitted
-			# here, as they could contain the pre-installed ssh keys
+			# here, as they could contain pre-installed SSH keys
 			if [ -s ${f} ]; then
 				local d=${home}/.ssh
 				sudo mkdir -p ${d}
@@ -1593,7 +1591,7 @@ menu_useradd(){
 				menu_ok "${msg_user_updated_ssh//USER/${user}}"
 			fi
 			
-			# copy the script files to the selected user home directory
+			# copy script files to the selected user's home directory
 			sudo cp -af ${tool%/*} ${home}
 			sudo chown -R ${user}: ${dest}
 		else
@@ -1755,20 +1753,13 @@ setup_log(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	[ -n "$1" -a "$1" != '-' ] || return 0
 	
-	# ensure the systemd is configured
+	# ensure systemd is configured
 	[ -z "${systemd}" ] && error ${err_systemd}
 	
 	# check for a leftover
 	[ -s "${oldunit}" ] && local old_unit=$(<${oldunit})
 	
 	get_pkg logrotate
-	
-	# fixed a bug for firedancer
-	# replaced the following code:
-	#   postrotate
-	#     systemctl kill -s USR1 ${old_unit:-${systemd}}.service
-	#   endscript
-	# with `copytruncate` for compatibility
 	sudo bash -c "cat >/etc/logrotate.d/${systemd%%[-]*} <<EOF
 $1 {
 	rotate ${log_rotate}
@@ -1840,7 +1831,7 @@ trim(){
 		fi
 	fi
 	
-	# run the trim
+	# run trim
 	info ${msg_trim_notice}
 	wait4r ${trim_idle_time} && log "${msg_log_start//CLIENT/${client}}" && SECONDS=0 \
 	&& ${cmd_trim} >>$LOGFILE && log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" \
@@ -1860,9 +1851,9 @@ stop(){
 restart(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	
-	# prepare the clean
+	# prepare the cleanup
 	local cmd_clean='echo no-clean'
-	# the tower dir never gets cleaned
+	# the tower directory is never cleaned
 	[ "${clean}" == 'all' ] && clean='ledger,accounts,snapshots'
 	local arr=(`echo ${clean} | tr ',' "\n"`) args=() d v
 	for v in "${arr[@]}"; do
@@ -1886,7 +1877,7 @@ restart(){
 		fi
 	fi
 	
-	# prepare the link
+	# prepare the symlink
 	local cmd_link='echo no-link'
 	if [ "${link}" == 1 ]; then
 		if [ $# -ne 2 ]; then
@@ -1914,8 +1905,8 @@ restart(){
 
 # BEGIN update
 save_tag(){
-	# if no TAG is found, the user prefers not to declare a specific TAG,
-	# and the active_release symlink will be used to resolve the binaries
+	# if no TAG is found, the user chose not to specify a TAG, and
+	# the active_release symlink will be used to resolve the binaries
 	local name=${2:-TAG}
 	local f=${tool%/*}/${moniker%%[-]*}/${3:-${systemd}}.service
 	sed -i --follow-symlinks "s/\(Environment=${name}=\)[^[:space:]]*/\1$1/" ${f} || error ${err_file_write//FILE/${f}}
@@ -1923,10 +1914,10 @@ save_tag(){
 update(){
 	# is_linux || { warn ${err_unsupported_os}; return; }
 	
-	# ensure the systemd is configured
+	# ensure systemd is configured
 	[ -z "${systemd}" ] && error ${err_systemd}
 	
-	# ensure the watchdog is paused
+	# ensure watchdog is paused
 	local lock=${tool%/*}/watchdog.pid
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
@@ -1952,7 +1943,7 @@ update(){
 		[ -n "${git}" ] && repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	}; set_git
 	
-	# TAG may be unset, read from the systemd, or provided via CLI
+	# TAG may be unset, read from systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2083,10 +2074,10 @@ update(){
 	${cmd:-echo no-init} && save_tag $TAG && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
-	# resume the watchdog
+	# resume watchdog
 	[ -n "${lock}" ] && pid_unlock ${lock}
 	
-	# restart when called from the CLI while not staked
+	# restart when called from CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 	
 	unset PATCH PATCH_BUILD REPO TARGET
@@ -2107,10 +2098,10 @@ fd_update(){
 	# is_linux || { warn ${err_unsupported_os}; return; }
 	fd_enabled || error ${msg_pkg_disabled//PKG/fd}
 	
-	# ensure the systemd is configured
+	# ensure systemd is configured
 	[ -z "${systemd}" ] && error ${err_systemd}
 	
-	# ensure the watchdog is paused
+	# ensure watchdog is paused
 	local lock=${tool%/*}/watchdog.pid
 	pid_lock ${lock} ${lock_timeout} # this unsets LOG
 	
@@ -2121,7 +2112,7 @@ fd_update(){
 	[ -n "${git}" ] || error ${err_git_repo}
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	
-	# TAG may be unset, read from the systemd, or provided via CLI
+	# TAG may be unset, read from systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2187,7 +2178,7 @@ fd_update(){
 	
 	export TAG_FD=$TAG_FD
 	git checkout $TAG_FD
-	git submodule update # --init --recursive (no args in the docs)
+	git submodule update
 	./deps.sh
 	make -j fdctl solana
 	
@@ -2202,10 +2193,10 @@ fd_update(){
 	save_conf 'TAG_FD' "$TAG_FD" && set_bin && set_cmd && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
-	# resume the watchdog
+	# resume watchdog
 	[ -n "${lock}" ] && pid_unlock ${lock}
 	
-	# restart when called from the CLI while not staked
+	# restart when called from CLI while not staked
 	! is_staked && is_main && is_running && restart || :
 	
 	unset REPO TARGET
@@ -2264,7 +2255,7 @@ relayer(){
 	# get the external IP address
 	local wanip; wanip=$(get_wanip) || error ${err_wanip}
 	
-	# add args from the CLI
+	# add args from CLI
 	local args=("--public-ip ${wanip}")
 	[ -n "${block_engine_url}" ] && args+=("--block-engine-url ${block_engine_url}")
 	
@@ -2290,7 +2281,7 @@ update_relayer(){
 	# is_linux || { warn ${err_unsupported_os}; return; }
 	relayer_enabled || error ${msg_pkg_disabled//PKG/relayer}
 	
-	# ensure the relayerd is configured
+	# ensure relayerd is configured
 	[ -z "${relayerd}" ] && error ${err_systemd}
 	
 	# client: jito-relayer
@@ -2301,7 +2292,7 @@ update_relayer(){
 	[ -n "${git}" ] || error ${err_git_repo}
 	local repo=$(echo "${git##*/}" | sed 's/\.git//g')
 	
-	# TAG may be unset, read from the systemd, or provided via CLI
+	# TAG may be unset, read from systemd, or provided via CLI
 	if [ -z "${version}" ]; then
 		# no `version` CLI argument is provided, display the menu
 		local version; version=$(menu_version ${repo}) || return
@@ -2378,7 +2369,7 @@ update_relayer(){
 	save_tag $RELAYER_TAG 'TAG' ${relayerd} && set_bin && ok
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}"
 	
-	# restart when called from the CLI while not staked
+	# restart when called from CLI while not staked
 	! is_staked && is_main && relayer_running && restart_relayer || :
 	
 	unset REPO TARGET
@@ -2404,7 +2395,7 @@ dz_init(){
 	# prepare the connection
 	${dz_solana} passport prepare-validator-access -u ${moniker} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg}
 	
-	# generate signature
+	# generate the signature
 	local sig=`${solana} sign-offchain-message service_key=${dz_pub}${arg2} -k ${staked}`
 	
 	# initiate a connection request
@@ -2448,7 +2439,7 @@ pda_fund(){
 }
 
 pda_fees(){
-	# verify the cluster
+	# verify `moniker`
 	[ "${moniker}" != 'mainnet-beta' ] && error ${err_unsupported_cluster}
 	
 	# verify `dz_fees_allow`
@@ -2470,7 +2461,7 @@ pda_fees(){
 	local out=${dz_fees_csv//EPOCH/${epoch}}
 	file_fetch ${url} ${out} -1 || return 1
 	
-	# calc the amount due for payment
+	# calculate the amount due
 	local pub=`${keygen} pubkey ${staked}` pda
 	quiet=1; pda=$(pda_fetch) || error "${pda}"
 	is_num ${pda} || error ${err_arg_numeric//ARG/pda}
@@ -2506,15 +2497,15 @@ dz_setup(){
 		local str=${err_pkg_installed//PKG/doublezero}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || { warn ${str} ${tip_force}; return; }
 	else
-		# install doublezero
+		# install DoubleZero
 		curl -1sLf ${url_doublezero} | sudo -E bash
 		get_pkg doublezero
 	fi
 	
-	# create the doublezero config directory
+	# create the DoubleZero config directory
 	mkdir -p $HOME/.config/doublezero
 	
-	# ensure the doublezero keypair exists
+	# ensure the DoubleZero keypair exists
 	local f=${dz_keypair}
 	if [ ! -f "${f}" ]; then
 		info ${msg_setup_dz_keypair}
@@ -2527,10 +2518,10 @@ dz_setup(){
 		info ${str//TYPE/doublezero}
 	fi
 	
-	# make `dz_keypair` a symlink to the doublezero default keypair
+	# make `dz_keypair` a symlink to the DoubleZero default keypair
 	ln -s ${dz_keypair} $HOME/.config/doublezero/id.json 2>/dev/null || :
 	
-	# configure environment
+	# configure the environment
 	local d=/etc/systemd/system/doublezerod.service.d
 	sudo mkdir -p ${d}
 	sudo tee "${d}/override.conf" >/dev/null <<EOF
@@ -2592,7 +2583,7 @@ setup(){
 	[ $# -eq 0 ] && menu_useradd || { menu_usermod $1 && menu_userdel $1; }
 	menu_moniker && menu_governor && menu_systemd && read_systemd && read_relayerd && set_bin && set_cmd
 	
-	# ensure the systemd is configured
+	# ensure systemd is configured
 	[ -z "${systemd}" ] && error ${err_systemd}
 	
 	local started=`date +%s`
@@ -2607,7 +2598,7 @@ setup(){
 	
 	# BEGIN security
 	if [ "${setup_sshd}" == 1 -a -s "$HOME/.ssh/authorized_keys" ]; then
-		# remove the pre-installed ssh keys if not root
+		# remove pre-installed SSH keys if not root
 		local f=authorized_keys*
 		if [ "$USER" != 'root' ]; then
 			sudo find /root/.ssh -type f -name ${f} ! -name '*~' -print0 | xargs -0I {} sudo mv -n {}{,~} || :
@@ -2617,11 +2608,11 @@ setup(){
 		local d=$HOME/.ssh
 		[ -d ${d} ] && chmod 700 ${d} && chmod 600 ${d}/*
 		
-		# copy over the provided config & restart ssh
+		# copy over the provided config and restart SSH
 		cp_conf /etc/ssh/sshd_config && sudo systemctl restart ssh
 		
 		# create the privilege separation directory if not created due to not
-		# restarting ssh after upgrade -- cp_conf() returned 1 for no changes
+		# restarting SSH after upgrade -- cp_conf() returned 1 for no changes
 		local d=/run/sshd
 		sudo sshd -T 2>&1 | grep -q "directory: ${d}" && sudo mkdir -p ${d}
 		
@@ -2656,7 +2647,7 @@ setup(){
 		res=$(cp_conf ${src} ${f}) && local reload=1
 		[ -n "${res}" ] && echo ${res}
 		
-		# allow ssh
+		# allow SSH
 		local port=`grep Port /etc/ssh/sshd_config | awk '{print $2}'`
 		local any="allow ${port:-22}/tcp"
 		if [ -z "${setup_ufw_ssh}" ]; then
@@ -2775,9 +2766,9 @@ setup(){
 		cp_conf ${f} && echo -e "$USER ALL=(ALL) NOPASSWD: ${tool}" | sudo tee -a ${f}
 		sudo test -f "${f}" && sudo chmod 440 ${f}
 		
-		# `sudo -l -U $USER` check could be useless due to the presence of the
-		# NOPASSWD:ALL pre-installed user rule, so add the user to the sudoers
-		# group before commenting it out to avoid being locked out of the sudo
+		# `sudo -l -U $USER` may be unreliable with a pre-installed NOPASSWD:ALL
+		# rule, so add the user to the sudoers group before commenting it out to
+		# avoid losing sudo access
 		sudo usermod -aG ${sudoers} $USER || error ${err_useradd_sudo//USER/$USER}
 		for f in /etc/sudoers /etc/sudoers.d/90-cloud-init-users; do
 			if sudo test -f "${f}"; then
@@ -2792,9 +2783,9 @@ setup(){
 	
 	# solana-cli
 	if [ "${setup_cli}" == 1 ]; then
-		update # run the installer
+		update # install the binaries
 		
-		# configure the CLI
+		# configure Solana CLI
 		${solana} config set --url ${url_rpc//MONIKER/${moniker}}
 		
 		# ensure the vote_acc keypair exists
@@ -2840,8 +2831,8 @@ setup(){
 		fi
 		
 		# make the validator keypair a symlink to the staked keypair
-		# ln --force may only be needed when switching the monikers,
-		# relative path is best for switching users by setup()
+		# ln --force may only be needed when switching monikers
+		# a relative path is best for switching users by setup()
 		[ "${staked%/*}" == "${keypair%/*}" ] && local staked=${staked##*/} # make it relative
 		[ "${setup_unstaked}" == 1 ] && local flag='-f'
 		ln -s ${flag} ${staked} ${keypair} 2>/dev/null || :
@@ -2870,16 +2861,14 @@ setup(){
 	if [ "${setup_relayer}" == 1 ] && relayer_enabled; then
 		get_pkg chrony
 		
-		# copy over the provided config & restart chrony
+		# copy over the provided config and restart chrony
 		cp_conf /etc/chrony/chrony.conf && sudo systemctl restart chrony
 		info ${msg_pkg_enabled//PKG/chrony}
 		
-		# trigger the menu_version to be invoked
-		unset version
-		# run the installer
-		update_relayer
+		unset version # trigger menu_version to be invoked
+		update_relayer # install the binaries
 		
-		# generate the authentication keypair if not exist
+		# generate the authentication keypair if missing
 		local f=${relayer_keypair%/*}/relayer-keypair-${moniker%%[-]*}.json
 		if [ ! -f "${relayer_keypair}" -a ! -f "${f}" ]; then
 			mkdir -p ${f%/*}
@@ -2889,9 +2878,9 @@ setup(){
 			info ${str//MONIKER/${moniker}}
 		fi
 		
-		# make relayer keypair a symlink to the authentication keypair
-		# ln --force may only be needed when switching the monikers,
-		# relative path is best for switching users by setup()
+		# make the relayer keypair a symlink to the authentication keypair
+		# ln --force may only be needed when switching monikers
+		# a relative path is best for switching users by setup()
 		ln -s ${f##*/} ${relayer_keypair} 2>/dev/null || :
 		
 		# generate a pair of JWT tokens if not exist
@@ -3059,8 +3048,8 @@ optimistic_slot(){
 	done
 }
 
-# TODO: setup a crontab to pull slot data from the RPC and store it in the DB.
-# This function should only retrieve and display this stored data from the DB.
+# TODO: setup a crontab to pull slot data from RPC and store it in DB.
+# This function should only retrieve and display the data stored in DB.
 # Ex: pull_slots(){...}
 # slots.db: slot, epoch, timestamp, rewards, skipped=Y/N
 strip0(){ echo $1 | sed '/\./ s/\.\{0,1\}0\{1,\}$//'; }
@@ -3533,7 +3522,7 @@ watchdog(){
 	# 2a - on reboot of the co-hosted staked validator, as well as
 	# 2b - on unattended restart of the co-hosted staked validator, by
 	# switching from the staked to the unstaked identity before running
-	# the validator (if the binding is set in the config to allow hot
+	# the validator (if binding is set in the script config to allow hot
 	# swapping, otherwise no auto-switching should take place) - this
 	# is invoked by main::validator;
 	#
@@ -3580,7 +3569,7 @@ watchdog(){
 			stamp=${arr[0]} # [0-9] last seen unix timestamp
 			stake=${arr[1]} # staked,unstaked
 			event=${arr[2]} # bindip,delinq,norpc,offline,reboot,restart
-			times=${arr[3]} # [0-9] the number of consecutive failures
+			times=${arr[3]} # [0-9] number of consecutive failures
 			ready=${arr[4]} # D=disabled,N=no,R=readycheck,Y=yes,[0-9]=cooldown
 		fi 
 	fi
@@ -3675,7 +3664,7 @@ watchdog(){
 				# 20240512: fixed an unattended restart bug (any -> attended-only)
 				# Only an attended restart should prevent watchdog from failing over.
 				# When attended the server for administration, any automated failover
-				# action taken in parallel by the watchdog could lead to a failure.
+				# action taken in parallel by watchdog could lead to a failure.
 				SMS=y; info ${msg_wd_disabled_restart}; unset SMS
 				times=0 # fixed a bug with a false positive on all-clear
 				ready=N
@@ -3698,7 +3687,7 @@ watchdog(){
 	
 	# Part 2: do a ready check (isolated from failing over)
 	# Check if watchdog is enabled/ready to take any failover action.
-	# Do nothing with the not-yet-caught-up validator, as it could have
+	# Do nothing with a not-yet-caught-up validator, as it could have
 	# been the result of any incomplete failover action taken either by
 	# the co-hosted or the remote validator. Disable upon a successful
 	# failover and then wait for rpc=Y & delinquent=N to enable again.
@@ -3780,7 +3769,7 @@ watchdog(){
 		local event_=$1
 		local stake_=$(is_staked && echo 'staked' || echo 'unstaked')
 		if [ "${stake}" != "${stake_}" ] || [ "${event}" != "${event_}" ]; then
-			# either `stake` or `event` changed, so reset the `times` counter
+			# either `stake` or `event` changed, so reset `times` counter
 			stake=${stake_}
 			event=${event_}
 			times=0
@@ -3838,7 +3827,7 @@ watchdog(){
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
-					now=1 # no slots can be processed while the RPC is down
+					now=1 # no slots can be processed while RPC is down
 					res=$(txtower ${bindip}) || status=1 # no failures accepted
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
@@ -3861,7 +3850,7 @@ watchdog(){
 			if [ "${times}" -ge "${failures}" ]; then
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
-					now=1 # no slots can be processed while the RPC is down
+					now=1 # no slots can be processed while RPC is down
 					res=$(txtower ${bindip}) || status=1 # no failures accepted
 					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
 				else
@@ -4079,7 +4068,7 @@ validator(){
 		[[ "${!d}" == /mnt/* ]] && printf '%s\n' "${!d}"
 	done | cut -d/ -f1-3 | sort -u | xargs -r -d '\n' sudo chown -R "$USER:" --
 	
-	# ensure the log dir exists
+	# ensure the log directory exists
 	mklog ${log}
 	
 	# play 2a,2b failover scenarios
@@ -4099,7 +4088,7 @@ validator(){
 		[ "${status}" != 1 ] && restart_relayer
 	fi
 	
-	# add args from the CLI: flags, options, jito, rakurai
+	# add args from CLI: flags, options, jito, rakurai
 	local args=()
 	
 	# agave
