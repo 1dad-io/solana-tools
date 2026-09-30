@@ -139,6 +139,7 @@ is_user(){ [[ "$1" =~ ^[[:lower:]_][[:lower:][:digit:]_-]{2,15}$ ]]; }
 is_linux(){ [[ "$OSTYPE" == 'linux-gnu'* ]]; }
 is_macos(){ [[ "$OSTYPE" == 'darwin'* ]]; }
 is_dryrun(){ [ "${dryrun}" == 1 ]; }
+is_alpenglow(){ [ "${moniker}" == 'testnet' -o "${moniker}" == 'devnet' ]; }
 is_staked(){ cmp -s ${keypair} ${staked}; }
 user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R "$USER:" ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
@@ -3331,8 +3332,9 @@ scp_(){
 	timeout 20s ${sudo} scp "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
 }
 get_tower(){
-	local pub=`${keygen} pubkey ${staked}`
-	echo $(ls -1t "${tower}"/tower*-"${pub}".bin 2>/dev/null | head -n1)
+	local pub=`${keygen} pubkey ${staked}` prefix='tower*'
+	is_alpenglow && prefix=vote_history
+	echo $(ls -1t "${tower}"/${prefix}-"${pub}".bin 2>/dev/null | head -n1)
 }
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
@@ -3389,6 +3391,8 @@ txtower(){
 	# this reason, FS trim should also be disabled for a quick catch-up
 	${sudo} touch ${trimmed}
 	
+	# the first SCP is a transport preflight before releasing the staked identity;
+	# the second one transfers the final consensus state after voting has stopped
 	local res str ssh_tower status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
@@ -3419,11 +3423,13 @@ rxtower(){
 	# make up commands
 	local f=$(get_tower)
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
+	[ -n "${f}" ] || cmd_rm=:
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
 		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
+		is_alpenglow && cmd_id=${cmd_id/ --require-tower/}
 	fi
 	[ "${staked%/*}" == "${keypair%/*}" ] && local staked=${staked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${staked} ${keypair}"
@@ -3432,21 +3438,21 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# check if the tower file exists and it isn't outdated
+	# check if the consensus file exists and it isn't outdated
+	local bypass=0
 	if [ ! -s "${f}" ]; then
 		local str=${err_tower_missing//FILE/${f}}
 		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
-		cmd_id=${cmd_id//--require-tower/} # lift the requirement
+		bypass=1
 	else
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
 		if (( $mdiff > $tower_ttl )); then
 			local str=${err_tower_outdated//TIME/$(elapsed $mdiff)}
 			[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
-			cmd_id=${cmd_id//--require-tower/} # lift the requirement
-			# since an outdated tower file could cause a fatal error, delete it
-			# until the tower auto-discard PR is merged into the master branch
-			# [deletion is now handled within the transition below]
+			bypass=1
+			# since an outdated consensus file could cause a fatal error, delete it
+			# [deletion is handled within the transition below]
 		else
 			sudo chown "$USER:" ${f}
 			local str=${msg_tower_ok//TIME/$(elapsed $mdiff)}
@@ -3454,17 +3460,51 @@ rxtower(){
 		fi
 	fi
 	
+	# lift the consensus file requirement only when explicitly forced
+	if [ "${bypass}" == 1 ]; then
+		if is_alpenglow; then
+			# without vote history, replay must first make the primary's last vote
+			# safe before set-identity can reconstruct the voting state
+			local cluster_slot=$(json_rpc ${rpc_url} getSlot '[{"commitment":"processed"}]')
+			local slot=$(json_rpc localhost getSlot '[{"commitment":"processed"}]')
+			local finalized=$(json_rpc localhost getSlot '[{"commitment":"finalized"}]')
+			local vote_pub=${vote_acc}
+			is_pub ${vote_pub} || vote_pub=`${keygen} pubkey ${vote_pub}`
+			local params='[{"commitment":"processed","votePubkey":"'${vote_pub}'"}]'
+			local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
+			local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
+			if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
+				warn ${err_ag_state}
+				return 2
+			fi
+			local str=${err_ag_catchup//SLOT/${slot}}
+			if (( ${slot} < ${cluster_slot} )); then
+				str=${str//TIP/${cluster_slot}}
+				warn "${str}"
+				return 2
+			fi
+			str=${err_ag_finalized//SLOT/${finalized}}
+			if (( ${finalized} <= ${last_vote} )); then
+				str=${str//VOTE/${last_vote}}
+				warn "${str}"
+				return 2
+			fi
+			fd_enabled || cmd_id+=' --do-not-require-vote-history'
+		else
+			cmd_id=${cmd_id/ --require-tower/}
+		fi
+	fi
+	
 	# run the transition
-	# set-identity is run after ln here because it can potentionally fail
-	# and trigger the validator restart with the unstaked identity, and for
-	# this reason, FS trim should also be disabled for a quick catch-up
+	# keep the persistent identity unstaked until set-identity succeeds,
+	# so an unexpected validator restart during the transition is safe
 	${sudo} touch ${trimmed}
 	
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
 	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; }
+	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
+	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; }
 	local err=$(fd_sanitize $(echo "${res}" | grep -E -i 'err|failed'))
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
@@ -3506,7 +3546,7 @@ vote_off(){
 }
 
 vote_on(){
-	force=1 # make the tower file optional
+	force=1 # make the consensus file optional
 	wait4e $1 && rxtower
 }
 
@@ -3531,7 +3571,7 @@ watchdog(){
 	#
 	# 2d - on RPC failure of the co-hosted staked validator, as well as
 	# 2e - on delinquency of the co-hosted staked validator, by locally
-	# executing txtower(-n) to transfer the tower file and stop voting;
+	# executing txtower(-n) to transfer the consensus file and stop voting;
 	#
 	# 2f - on the absence of the remote unstaked validator (no action,
 	# a blocker for other actions, monitoring purposes only);
@@ -3923,16 +3963,20 @@ watchdog(){
 			warn ${err_delinquent} ${tip_seen//TIMES/${times}}
 			if [ "${times}" -ge "${failures}" ]; then
 				SMS=y
-				res=$(vote_on) || status=1 # may but shouldn't fail
-				is_ok && ok ${msg_vote_on} || warn ${msg_vote_on} ${tip_errors}
+				res=$(vote_on); status=$? # may but shouldn't fail
+				if is_ok; then
+					ok ${msg_vote_on}
+				else
+					warn ${msg_vote_on} ${tip_errors}
+				fi
 			fi
 			SMS=y
 		fi
 	fi
 	
-	# check if we failed over
-	if [ "${failed}" == Y -a -n "${res}" ]; then
-		ready=R # do a ready check
+	# check if we failed over; status=2 means Alpenglow isn't safe to take over yet
+	if [ "${failed}" == Y -a -n "${res}" -a ${status} -ne 2 ]; then
+		ready=R # do a ready check before taking any action in the new role
 		unset SMS; info ${msg_wd_disabled_recheck}; SMS=y
 	fi
 	
