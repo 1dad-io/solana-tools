@@ -61,7 +61,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
-	--limit-ledger-size \
+	--limit-blockstore-size \
 	--no-poh-speed-test \
 	--no-port-check \
 	--account-index program-id \

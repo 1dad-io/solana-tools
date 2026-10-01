@@ -23,7 +23,6 @@ WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
-	--accounts-index-path /mnt/acct/accounts_index \
 	--snapshots /mnt/snap/snapshots \
 	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \
@@ -40,7 +39,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--known-validator dv2eQHeP4RFrJZ6UeiZWoc3XTtmtZCUKxxCApCDcRNV \
 	--known-validator dv3qDFk1DTF36Z62bNvrCXe9sKATA6xvVy6A798xxAS \
 	--known-validator dv4ACNkpYPcE3aKmYDqZm9G5EB3J4MRoeE7WNDRBVJB \
-	--dynamic-port-range 8000-8025 \
+	--dynamic-port-range 8000-8026 \
 	--rpc-bind-address 0.0.0.0 \
 	--rpc-port 8899 \
 	--full-rpc-api \
@@ -53,7 +52,7 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--maximum-local-snapshot-age 2500 \
 	--minimal-snapshot-download-speed 52428800 \
 	--wal-recovery-mode skip_any_corrupted_record \
-	--limit-ledger-size 50000000 \
+	--limit-blockstore-size 100000000 \
 	--enable-accounts-disk-index \
 	--no-poh-speed-test \
 	--no-port-check
