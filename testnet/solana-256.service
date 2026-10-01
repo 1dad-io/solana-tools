@@ -40,7 +40,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-testnet.json \
 	--authorized-voter /home/ubuntu/solana-tools/keys/validator-keypair-testnet.json \
 	--expected-genesis-hash 4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY \
-	--expected-shred-version 4457 \
 	--entrypoint entrypoint.testnet.solana.com:8001 \
 	--entrypoint entrypoint2.testnet.solana.com:8001 \
 	--entrypoint entrypoint3.testnet.solana.com:8001 \

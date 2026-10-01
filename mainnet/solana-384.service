@@ -64,7 +64,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-mainnet.json \
 	--authorized-voter /home/ubuntu/solana-tools/keys/validator-keypair-mainnet.json \
 	--expected-genesis-hash 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d \
-	--expected-shred-version 50093 \
 	--entrypoint entrypoint.mainnet-beta.solana.com:8001 \
 	--entrypoint entrypoint2.mainnet-beta.solana.com:8001 \
 	--entrypoint entrypoint3.mainnet-beta.solana.com:8001 \
