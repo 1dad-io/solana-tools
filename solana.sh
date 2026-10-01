@@ -2063,7 +2063,7 @@ update(){
 		
 		if [ "$PATCH_BUILD" != 1 ]; then
 			# build & make install
-			[ "${setup_cli_full}" == 1 ] || local arg='--validator-only'
+			[ "${setup_cli_full}" == 1 ] || local arg='--no-build-dev-bins --no-build-deprecated-bins --no-build-platform-tools'
 			CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh ${arg} $TARGET
 		fi
 		
