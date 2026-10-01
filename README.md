@@ -1,6 +1,6 @@
 # solana-tools
 
-Bash tooling I use to run validators on Solana mainnet and testnet.
+A Bash Swiss Army knife to operate a Solana validator.
 
 It started as a few helper functions and kept growing together with my validator setup. Most of the logic still lives in `solana.sh`. It handles setup, updates, restarts, snapshots, RPC helpers, host tuning and failover between a staked validator and an unstaked standby.
 
