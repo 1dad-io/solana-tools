@@ -133,8 +133,8 @@ is_cidr(){
 }
 is_ip() { [[ "$1" =~ ^(0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))\.){3}0*(1?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))$ ]]; }
 is_url(){ [[ "$1" =~ ^https?:// ]]; }
-is_pub(){ local base58='[1-9A-HJ-NP-Za-km-z]'; [[ "$1" =~ ^${base58}{32,44}$ ]]; }
 is_main(){ for i in {1..2}; do [ "${FUNCNAME[$i]}" == 'main' ] && return 0; done; return 1; }
+is_pubkey(){ local base58='[1-9A-HJ-NP-Za-km-z]'; [[ "$1" =~ ^${base58}{32,44}$ ]]; }
 is_user(){ [[ "$1" =~ ^[[:lower:]_][[:lower:][:digit:]_-]{2,15}$ ]]; }
 is_linux(){ [[ "$OSTYPE" == 'linux-gnu'* ]]; }
 is_macos(){ [[ "$OSTYPE" == 'darwin'* ]]; }
@@ -595,7 +595,7 @@ read_systemd(){
 	# make keypairs an absolute path
 	[ "${staked}" == "${staked##*/}" ] && staked=${keypair%/*}/${staked}
 	[ "${unstaked}" == "${unstaked##*/}" ] && unstaked=${keypair%/*}/${unstaked}
-	if ! is_pub ${vote_acc}; then
+	if ! is_pubkey ${vote_acc}; then
 		[ "${vote_acc}" == "${vote_acc##*/}" ] && vote_acc=${keypair%/*}/${vote_acc}
 	fi
 	
@@ -706,6 +706,7 @@ set_cmd(){
 # END commands
 
 # BEGIN one-liners
+pubkey(){ is_pubkey "$1" && echo "$1" || ${keygen} pubkey "$1"; }
 export_(){ [ -z "$1" ] && error ${err_arg}; local var=$1; echo ${!var}; }
 get_gov(){ [ "${cpu_gov}" != 'disabled' ] && echo ${cpu_gov} || echo ${cpu_gov_default}; }
 monitor(){ ${cmd_user} ${env_keep} ${validator} -l ${ledger} monitor; }
@@ -961,7 +962,7 @@ tx(){
 	
 	# verify `recipient`
 	[ -n "${recipient}" ] || error ${err_arg} recipient
-	if ! is_pub ${recipient}; then
+	if ! is_pubkey ${recipient}; then
 		[ -s "${recipient}" ] || error ${err_file_read//FILE/${recipient}}
 	fi
 	
@@ -974,7 +975,7 @@ tx(){
 			|| error `echo "${resp}" | grep -iw Error`
 	else
 		# request an airdrop
-		opt="-u ${moniker}" # need a free RPC server
+		opt="-u ${moniker}" # need a public RPC server
 		resp=`${solana} ${opt} airdrop 1 ${recipient} 2>&1` || error `echo "${resp}" | grep -iw Error`
 	fi
 	
@@ -999,13 +1000,13 @@ precheck(){
 	
 	# verify `airdrop_to`
 	[ -n "${airdrop_to}" ] || error ${err_airdrop_to}
-	if ! is_pub ${airdrop_to}; then
+	if ! is_pubkey ${airdrop_to}; then
 		[ "${airdrop_to}" == "${airdrop_to##*/}" ] && airdrop_to=${keypair%/*}/${airdrop_to}
 		[ -s "${airdrop_to}" ] || error ${err_file_read//FILE/${airdrop_to}}
 	fi
 	
 	# verify `airdrop_from`
-	is_pub ${airdrop_from} || error ${err_airdrop_from}
+	is_pubkey ${airdrop_from} || error ${err_airdrop_from}
 	
 	# verify `airdrop_allow`
 	assert_allowed ${airdrop_allow}
@@ -1045,7 +1046,7 @@ airdrop(){
 		amount=0
 	fi
 	
-	info "from=${b_from},to=${b_to},sent=${amount} ($(elapsed $SECONDS))"
+	info "from:$(pubkey ${airdrop_from})=${b_from},to:$(pubkey ${airdrop_to})=${b_to},sent=${amount} ($(elapsed $SECONDS))"
 	unset LOG
 	(( ${amount} > 0 )) && ok || error
 }
@@ -1104,7 +1105,7 @@ balance(){
 	
 	# verify `balance_to`
 	[ -n "${balance_to}" ] || error ${err_balance_to}
-	if ! is_pub ${balance_to}; then
+	if ! is_pubkey ${balance_to}; then
 		[ "${balance_to}" == "${balance_to##*/}" ] && balance_to=${keypair%/*}/${balance_to}
 		[ -s "${balance_to}" ] || error ${err_file_read//FILE/${balance_to}}
 	fi
@@ -1147,7 +1148,7 @@ balance(){
 		amount=0
 	fi
 	
-	info "from=${b_from},to=${b_to},sent=${amount} ($(elapsed $SECONDS))"
+	info "from:$(pubkey ${balance_from})=${b_from},to:$(pubkey ${balance_to})=${b_to},sent=${amount} ($(elapsed $SECONDS))"
 	unset LOG
 	(( ${amount} > 0 )) && ok || error
 }
@@ -1168,7 +1169,7 @@ ufw_purge_unbound(){
 }
 
 bind(){
-	local bindip=${1:-${ssh_host}} pub=${2:-${ssh_bind}} noecho=0
+	local bindip=${1:-${ssh_host}} pubkey=${2:-${ssh_bind}} noecho=0
 	
 	# do some error checking first
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
@@ -1185,20 +1186,20 @@ bind(){
 	[ "${noecho}" == 0 ] && info ${msg_bind_ip//ADDR/${bindip}}
 	
 	# determine if we're running the staked validator
-	if is_staked && [ -z "${pub}" ]; then
+	if is_staked && [ -z "${pubkey}" ]; then
 		# get the binding server pubkey via RPC
 		local res
 		if res=$(json_rpc ${bindip} 'getIdentity'); then
-			pub=`echo ${res} | jq -r .identity`
+			pubkey=`echo ${res} | jq -r .identity`
 			noecho=0
 		fi
 	fi
-	while ! is_pub ${pub}; do
+	while ! is_pubkey ${pubkey}; do
 		read -p "$(info ${msg_bind_prompt//ARG/ID (junk)}) "
-		pub=$REPLY
+		pubkey=$REPLY
 		noecho=1
 	done
-	[ "${noecho}" == 0 ] && info ${msg_bind_id//PUBKEY/${pub}}
+	[ "${noecho}" == 0 ] && info ${msg_bind_id//PUBKEY/${pubkey}}
 	
 	# modify the provided SSH config
 	f=${tool%/*}/etc/ssh/sshd_config
@@ -1226,7 +1227,7 @@ bind(){
 	fi
 	
 	# update config
-	save_conf 'ssh_bind' "${pub}"
+	save_conf 'ssh_bind' "${pubkey}"
 	save_conf 'ssh_host' "${bindip}"
 	
 	ok
@@ -2383,8 +2384,8 @@ dz_init(){
 	is_staked || error ${err_unstaked}
 	
 	local opt="-u ${moniker} -k ${staked}"
-	local pub=`${keygen} pubkey ${staked}`
-	local dz_pub=`${dz} address`
+	local pubkey=$(pubkey ${staked})
+	local address=`${dz} address`
 	if [ -n "${ssh_bind}" ]; then
 		local arg="--backup-validator-ids ${ssh_bind}"
 		local arg2=",backup_ids=${ssh_bind}"
@@ -2394,30 +2395,29 @@ dz_init(){
 	${dz_solana} passport find-validator -u ${moniker}
 	
 	# prepare the connection
-	${dz_solana} passport prepare-validator-access -u ${moniker} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg}
+	${dz_solana} passport prepare-validator-access -u ${moniker} --doublezero-address ${address} --primary-validator-id ${pubkey} ${arg}
 	
 	# generate the signature
-	local sig=`${solana} sign-offchain-message service_key=${dz_pub}${arg2} -k ${staked}`
+	local sig=`${solana} sign-offchain-message service_key=${address}${arg2} -k ${staked}`
 	
 	# initiate a connection request
-	${dz_solana} passport request-validator-access ${opt} --doublezero-address ${dz_pub} --primary-validator-id ${pub} ${arg} --signature ${sig} \
+	${dz_solana} passport request-validator-access ${opt} --doublezero-address ${address} --primary-validator-id ${pubkey} ${arg} --signature ${sig} \
 		&& ok || err
 }
 
 pda_fetch(){
-	local pub=`${keygen} pubkey ${staked}`
 	[ -n "${quiet}" ] && local arg='-b' || local arg=
-	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n ${pub} ${arg}
+	${dz_solana} revenue-distribution fetch validator-deposits -u ${moniker} -n $(pubkey ${staked}) ${arg}
 }
 
 pda_fund(){
 	LOG=y
 	
 	# set SMS settings
-	SENDER=$(mkalias $(${keygen} pubkey ${unstaked}))
+	SENDER=$(mkalias $(pubkey ${unstaked}))
 	
 	local opt="-u ${moniker} -k ${staked}"
-	local pub=`${keygen} pubkey ${staked}`
+	local pubkey=$(pubkey ${staked})
 	local arg resp str
 	if [ `echo "${1:-0} >= 0.000000001" | bc` == 1 ]; then
 		arg="--fund ${1}"
@@ -2429,7 +2429,7 @@ pda_fund(){
 	
 	read -p "${str}" REPLY </dev/tty
 	if [[ $REPLY =~ ^[Yy](es)?$ ]]; then
-		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pub} ${arg} 2>&1` || error "${resp}"
+		resp=`${dz_solana} revenue-distribution validator-deposit ${opt} -n ${pubkey} ${arg} 2>&1` || error "${resp}"
 		quiet=1; resp=$(pda_fetch) || error "${resp}"
 		SMS=y; info "paid=${1:-0},pda=${resp}"; unset SMS
 	else
@@ -2463,10 +2463,10 @@ pda_fees(){
 	file_fetch ${url} ${out} -1 || return 1
 	
 	# calculate the amount due
-	local pub=`${keygen} pubkey ${staked}` pda
+	local pubkey=$(pubkey ${staked}) pda
 	quiet=1; pda=$(pda_fetch) || error "${pda}"
 	is_num ${pda} || error ${err_arg_numeric//ARG/pda}
-	local lamports=`cat ${out} | grep ${pub} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
+	local lamports=`cat ${out} | grep ${pubkey} | awk -F, '$3 ~ /^[0-9]+$/ { print $3 }'`
 	local fees=`echo "scale=9; ${lamports:-0}/1000000000" | bc | xargs printf '%.9f'`
 	local debt=`echo "${fees:-0}-${pda:-0}" | bc | xargs printf '%.9f'`
 	local fund=$(if_num $(echo "${debt} > 0" | bc) ? Y : N)
@@ -2514,8 +2514,8 @@ dz_setup(){
 		info `${dz} keygen -o ${f}`
 		chmod 600 ${f}
 	else
-		local pub=`${dz} address`
-		local str=${msg_setup_keypair//PUBKEY/${pub}}
+		local address=`${dz} address`
+		local str=${msg_setup_keypair//PUBKEY/${address}}
 		info ${str//TYPE/doublezero}
 	fi
 	
@@ -2538,11 +2538,7 @@ EOF
 	ok ${msg_pkg_installed//PKG/doublezero}
 }
 
-dz_user_list(){
-	local pub=`${dz} address`
-	${dz} user list | grep ${pub}
-}
-
+dz_user_list(){ ${dz} user list | grep `${dz} address`; }
 dz(){
 	is_dryrun || is_linux || error ${err_unsupported_os}
 	dz_enabled || error ${msg_pkg_disabled//PKG/doublezero}
@@ -2797,8 +2793,8 @@ setup(){
 			info `${cmd_keygen} -o ${f}`
 			chmod 600 ${f}
 		else
-			local pub=`${keygen} pubkey ${f}`
-			local str=${msg_setup_keypair//PUBKEY/${pub}}
+			local pubkey=$(pubkey ${f})
+			local str=${msg_setup_keypair//PUBKEY/${pubkey}}
 			info ${str//TYPE/vote account}
 		fi
 		
@@ -2812,8 +2808,8 @@ setup(){
 			info `${cmd_keygen} -o ${f}`
 			chmod 600 ${f}
 		else
-			local pub=`${keygen} pubkey ${f}`
-			local str=${msg_setup_keypair//PUBKEY/${pub}}
+			local pubkey=$(pubkey ${f})
+			local str=${msg_setup_keypair//PUBKEY/${pubkey}}
 			info ${str//TYPE/staked keypair}
 		fi
 		
@@ -2826,8 +2822,8 @@ setup(){
 				info `${cmd_keygen} -o ${f}`
 				chmod 600 ${f}
 			fi
-			local pub=`${keygen} pubkey ${f}`
-			local str=${msg_setup_bind//PUBKEY/${pub}}
+			local pubkey=$(pubkey ${f})
+			local str=${msg_setup_bind//PUBKEY/${pubkey}}
 			info ${str//HOST/$(get_wanip)}
 		fi
 		
@@ -2874,8 +2870,8 @@ setup(){
 		if [ ! -f "${relayer_keypair}" -a ! -f "${f}" ]; then
 			mkdir -p ${f%/*}
 			info `${cmd_keygen} -o ${f}`
-			local pub=`${keygen} pubkey ${f}`
-			local str=${msg_setup_relayer//PUBKEY/${pub}}
+			local pubkey=$(pubkey ${f})
+			local str=${msg_setup_relayer//PUBKEY/${pubkey}}
 			info ${str//MONIKER/${moniker}}
 		fi
 		
@@ -3019,10 +3015,10 @@ make_snapshot(){
 leader_slot(){
 	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
 	get_pkg bc
-	local pub=`${keygen} pubkey ${staked}`
+	local pubkey=$(pubkey ${staked})
 	echo -e "${LN}${msg_slot_leader}${NC}"
 	while true; do
-		local slots=`tail -n10000 ${log} 2>/dev/null | awk -v pattern="${pub}.+within slot" '$0 ~ pattern {printf "%d\n", $18-$12}' | tail -1`
+		local slots=`tail -n10000 ${log} 2>/dev/null | awk -v pattern="${pubkey}.+within slot" '$0 ~ pattern {printf "%d\n", $18-$12}' | tail -1`
 		[[ "${slots}" -lt 0 ]] && slots=0
 		local S=`bc <<< "${slots}*0.5" 2>/dev/null`
 		local H=`bc <<< "$S/3600" 2>/dev/null`
@@ -3055,7 +3051,7 @@ optimistic_slot(){
 # slots.db: slot, epoch, timestamp, rewards, skipped=Y/N
 strip0(){ echo $1 | sed '/\./ s/\.\{0,1\}0\{1,\}$//'; }
 slots(){
-	local pub=`${keygen} pubkey ${staked}`
+	local pubkey=$(pubkey ${staked})
 	local epoch=$1
 	local epoch_opt=$(is_num ${epoch} && echo "--epoch ${epoch}")
 	local u=$(if_fn is_running ? localhost : "${rpc_url}")
@@ -3095,7 +3091,7 @@ slots(){
 	is_curr_epoch(){ [ -z "${epoch}" -o "${epoch}" == "${curr_epoch}" ]; }
 	
 	local now=`date +%s`
-	local balance=`${solana} ${opt} balance ${pub}`
+	local balance=`${solana} ${opt} balance ${pubkey}`
 	local avskip=`${solana} ${opt} validators | grep -i 'Average Stake-Weighted Skip Rate' | awk '{print $5}'`
 	local epoch_info=`${solana} ${opt} epoch-info`
 	if [ -n "${epoch_info}" ]; then
@@ -3110,7 +3106,7 @@ slots(){
 		local curr_slot=`echo -e "${epoch_info}" | grep -i 'Slot: ' | cut -d ':' -f 2 | cut -d ' ' -f 2`
 		local slot_len=`echo "scale=10; ${epoch_len}/(${last_slot}-${first_slot})" | bc`
 		local slot_speed=`echo "scale=1; 1.0/${slot_len}" | bc` # slots/sec
-		local schedule=`${solana} ${opt} leader-schedule ${epoch_opt} | grep ${pub}`
+		local schedule=`${solana} ${opt} leader-schedule ${epoch_opt} | grep ${pubkey}`
 		if [ -n "${schedule}" ]; then
 			local next_slot=`echo -e "${schedule}" | awk '{print $1}' | sort -n | awk -v cs="${curr_slot}" '$1 > cs {print $1; exit}'`
 			local scheduled=`echo -e "${schedule}" | wc -l`
@@ -3118,7 +3114,7 @@ slots(){
 			local remaining=`echo -e "${schedule}" | awk -v cs="${curr_slot}" '{ if ($1 > cs) { print }}' | wc -l`
 			[ -n "${next_slot}" ] && local slot_time=`echo "$(slot_time ${next_slot})-${now}" | bc`
 			# Error: Ledger data not available for slots A to B (minimum ledger slot is C)
-			local slots=`${solana} ${opt} block-production ${epoch_opt} -v | grep ${pub}`
+			local slots=`${solana} ${opt} block-production ${epoch_opt} -v | grep ${pubkey}`
 			if [ -n "${slots}" ]; then
 				local skipped_slots=`echo -e "${slots}" | grep -i SKIPPED`
 				local skipped=`echo -e "${slots}" | head -n1 | awk '{print $4}'`
@@ -3145,7 +3141,7 @@ slots(){
 				else
 					echo -e -n "${CG}${slot} $(slot_date ${slot})${NC} "
 					if json_fetch "block ${slot}" ${u} -1; then
-						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pub "${pub}" '[.rewards[] | select(.pubkey==$pub) | .lamports] | add'`
+						local lamports=`cat ${block//SLOT/${slot}} | jq -c --arg pubkey "${pubkey}" '[.rewards[] | select(.pubkey==$pubkey) | .lamports] | add'`
 						local amount=`echo "scale=9; ${lamports}/1000000000" | bc | xargs printf '%.9f'`
 						rewards=`echo "scale=9; ${rewards}+${amount}" | bc | xargs printf '%.9f'`
 						echo "${CG}${amount}${NC}"
@@ -3162,7 +3158,7 @@ slots(){
 #	echo -e "${LN}                       Total: ${rewards:-$(printf '%.9f')}${NC}"
 	echo
 	echo -e "${LN} Packages:${NC} ${BACKTITLE:-n/a}"
-	echo -e "${LN} Identity:${NC} ${pub:-n/a}"
+	echo -e "${LN} Identity:${NC} ${pubkey:-n/a}"
 	echo -e "${LN}  Balance:${NC} ${balance:-n/a}"
 	echo -e "${LN}  Rewards:${NC} ${rewards:-$(printf '%.9f')} SOL"
 	echo -e "${LN}    Epoch:${NC} ${curr_epoch:-n/a} (${epoch_rate:-0}% completed, $(elapsed ${epoch_rem:-0}) left)"
@@ -3332,9 +3328,9 @@ scp_(){
 	timeout 20s ${sudo} scp "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
 }
 get_tower(){
-	local pub=`${keygen} pubkey ${staked}` prefix='tower*'
+	local pubkey=$(pubkey ${staked}) prefix='tower*'
 	is_alpenglow && prefix=vote_history
-	echo $(ls -1t "${tower}"/${prefix}-"${pub}".bin 2>/dev/null | head -n1)
+	echo `ls -1t "${tower}"/${prefix}-"${pubkey}".bin 2>/dev/null | head -n1`
 }
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
@@ -3468,9 +3464,7 @@ rxtower(){
 			local cluster_slot=$(json_rpc ${rpc_url} getSlot '[{"commitment":"processed"}]')
 			local slot=$(json_rpc localhost getSlot '[{"commitment":"processed"}]')
 			local finalized=$(json_rpc localhost getSlot '[{"commitment":"finalized"}]')
-			local vote_pub=${vote_acc}
-			is_pub ${vote_pub} || vote_pub=`${keygen} pubkey ${vote_pub}`
-			local params='[{"commitment":"processed","votePubkey":"'${vote_pub}'"}]'
+			local params='[{"commitment":"processed","votePubkey":"'$(pubkey ${vote_acc})'"}]'
 			local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
 			local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
 			if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
@@ -3595,7 +3589,7 @@ watchdog(){
 	[ -s "${unstaked}" ]   || error ${err_file_read//FILE/${unstaked}}
 	
 	# set SMS settings
-	SENDER=$(mkalias $(${keygen} pubkey ${unstaked}))
+	SENDER=$(mkalias $(pubkey ${unstaked}))
 	
 	# get the latest failover state
 	local stamp stake event times ready
@@ -3689,8 +3683,8 @@ watchdog(){
 			# to an external RPC server - localhost can get false positives
 			if json_fetch 'validators' ${rpc_url} 30; then
 				local res; res=$(get_pkg jq) || warn ${res} # isolated
-				local pub=`${keygen} pubkey ${staked}`
-				local json_data=`cat ${validators} | jq '.validators[] | select(.identityPubkey == "'${pub}'")'`
+				local pubkey=$(pubkey ${staked})
+				local json_data=`cat ${validators} | jq '.validators[] | select(.identityPubkey == "'${pubkey}'")'`
 				local last_vote=`echo "${json_data}" | jq -r .lastVote`
 				local delinquent=`echo "${json_data}" | jq -r .delinquent`
 				[ "${delinquent}" == true ] && delinquent=Y
@@ -4224,9 +4218,9 @@ validator(){
 	fi
 	
 	# fixed a bug: The validator's identity pubkey cannot be a --known-validator
-	local pub=`${keygen} pubkey ${staked}` v
+	local pubkey=$(pubkey ${staked}) v
 	for v in "${known_id[@]}"; do
-		[ "${v}" != "${pub}" ] && args+=("--known-validator ${v}")
+		[ "${v}" != "${pubkey}" ] && args+=("--known-validator ${v}")
 	done
 	
 	# run the validator
