@@ -139,7 +139,6 @@ is_user(){ [[ "$1" =~ ^[[:lower:]_][[:lower:][:digit:]_-]{2,15}$ ]]; }
 is_linux(){ [[ "$OSTYPE" == 'linux-gnu'* ]]; }
 is_macos(){ [[ "$OSTYPE" == 'darwin'* ]]; }
 is_dryrun(){ [ "${dryrun}" == 1 ]; }
-is_alpenglow(){ [ "${moniker}" == 'testnet' -o "${moniker}" == 'devnet' ]; }
 is_staked(){ cmp -s ${keypair} ${staked}; }
 user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R "$USER:" ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
@@ -235,7 +234,7 @@ read_conf(){
 	relayerd=${relayerd:-relayer}
 	# systemd defaults to RAM profile
 	tower_slot_delay=${tower_slot_delay:-0} # slots
-	tower_slot_speed=${tower_slot_speed:-2.5}
+	tower_slot_speed=${tower_slot_speed:-5} # slots, 1s / 200ms per slot
 	tower_ttl_slots=${tower_ttl_slots:-256}
 	trim_ttl=${trim_ttl:-3600} # hours
 	trim_idle_time=${trim_idle_time:-5} # mins
@@ -3325,12 +3324,11 @@ scp_(){
 	local path=$(ssh_control_path "${user}" "${host}" "${port}")
 	local target="${user}@${host}"
 	ssh_open "${user}" "${host}" "${port}" || return 1
-	timeout 20s ${sudo} scp "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
+	timeout 20s ${sudo} scp -p "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
 }
 get_tower(){
-	local pubkey=$(pubkey ${staked}) prefix='tower*'
-	is_alpenglow && prefix=vote_history
-	echo `ls -1t "${tower}"/${prefix}-"${pubkey}".bin 2>/dev/null | head -n1`
+	local pubkey=$(pubkey ${staked})
+	echo "${tower}/vote_history-${pubkey}.bin"
 }
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
@@ -3360,7 +3358,7 @@ txtower(){
 		[ "${force}" == 1 ] && warn ${errmsg} ${tip_forced} || error ${errmsg} ${tip_force}
 	fi
 	
-	# check if the tower file exists
+	# check if the consensus file exists
 	local f=$(get_tower)
 	[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}}
 	
@@ -3379,7 +3377,6 @@ txtower(){
 		args+=('--dryrun')
 		local tip=" ${tip_dryrun}"
 	fi
-	[ "${force}" == 1 ] && args+=('--force')
 	
 	# run the transition
 	# set-identity is run after ln here because it can potentionally fail
@@ -3389,18 +3386,20 @@ txtower(){
 	
 	# the first SCP is a transport preflight before releasing the staked identity;
 	# the second one transfers the final consensus state after voting has stopped
-	local res str ssh_tower status=0
+	local res str ssh_tower remote part status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" ${ssh_tower}` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_prepared//REMOTE/${host}:${ssh_tower}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; } \
+	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_prepared//REMOTE/${host}:${part}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
-	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" ${ssh_tower}` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_released//REMOTE/${host}:${ssh_tower}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" mv -f "${part}" "${remote}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_released//REMOTE/${host}:${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
@@ -3419,13 +3418,11 @@ rxtower(){
 	# make up commands
 	local f=$(get_tower)
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
-	[ -n "${f}" ] || cmd_rm=:
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
 		# [ "${force}" == 1 ] && cmd_id+=' --force'
 	else
-		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity --require-tower ${staked}"
-		is_alpenglow && cmd_id=${cmd_id/ --require-tower/}
+		local cmd_id="${cmd_user} ${env_keep} ${validator} -l ${ledger} set-identity ${staked}"
 	fi
 	[ "${staked%/*}" == "${keypair%/*}" ] && local staked=${staked##*/} # make it relative
 	local cmd_ln="${sudo} ln -sfv ${staked} ${keypair}"
@@ -3434,59 +3431,47 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# check if the consensus file exists and it isn't outdated
-	local bypass=0
-	if [ ! -s "${f}" ]; then
-		local str=${err_tower_missing//FILE/${f}}
-		[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
-		bypass=1
-	else
+	# a normal handoff must use a recent transferred consensus file
+	if [ "${force}" != 1 ]; then
+		[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}} ${tip_force}
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
 		if (( $mdiff > $tower_ttl )); then
 			local str=${err_tower_outdated//TIME/$(elapsed $mdiff)}
-			[ "${force}" == 1 ] && warn ${str} ${tip_forced} || error ${str} ${tip_force}
-			bypass=1
-			# since an outdated consensus file could cause a fatal error, delete it
-			# [deletion is handled within the transition below]
-		else
-			sudo chown "$USER:" ${f}
-			local str=${msg_tower_ok//TIME/$(elapsed $mdiff)}
-			cmd_rm="echo ${str//TTL/${tower_ttl}}"
+			error ${str} ${tip_force}
 		fi
+		sudo chown "$USER:" ${f}
+		local str=${msg_tower_ok//TIME/$(elapsed $mdiff)}
+		cmd_rm="echo ${str//TTL/${tower_ttl}}"
 	fi
 	
 	# lift the consensus file requirement only when explicitly forced
-	if [ "${bypass}" == 1 ]; then
-		if is_alpenglow; then
-			# without vote history, replay must first make the primary's last vote
-			# safe before set-identity can reconstruct the voting state
-			local cluster_slot=$(json_rpc ${rpc_url} getSlot '[{"commitment":"processed"}]')
-			local slot=$(json_rpc localhost getSlot '[{"commitment":"processed"}]')
-			local finalized=$(json_rpc localhost getSlot '[{"commitment":"finalized"}]')
-			local params='[{"commitment":"processed","votePubkey":"'$(pubkey ${vote_acc})'"}]'
-			local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
-			local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
-			if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
-				warn ${err_ag_state}
-				return 2
-			fi
-			local str=${err_ag_catchup//SLOT/${slot}}
-			if (( ${slot} < ${cluster_slot} )); then
-				str=${str//TIP/${cluster_slot}}
-				warn "${str}"
-				return 2
-			fi
-			str=${err_ag_finalized//SLOT/${finalized}}
-			if (( ${finalized} <= ${last_vote} )); then
-				str=${str//VOTE/${last_vote}}
-				warn "${str}"
-				return 2
-			fi
-			fd_enabled || cmd_id+=' --do-not-require-vote-history'
-		else
-			cmd_id=${cmd_id/ --require-tower/}
+	if [ "${force}" == 1 ]; then
+		# without vote history, replay must first make the primary's last vote
+		# safe before set-identity can reconstruct the voting state
+		local cluster_slot=$(json_rpc ${rpc_url} getSlot '[{"commitment":"processed"}]')
+		local slot=$(json_rpc localhost getSlot '[{"commitment":"processed"}]')
+		local finalized=$(json_rpc localhost getSlot '[{"commitment":"finalized"}]')
+		local params='[{"commitment":"processed","votePubkey":"'$(pubkey ${vote_acc})'"}]'
+		local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
+		local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
+		if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
+			warn ${err_ag_state}
+			return 2
 		fi
+		local str=${err_ag_catchup//SLOT/${slot}}
+		if (( ${slot} < ${cluster_slot} )); then
+			str=${str//TIP/${cluster_slot}}
+			warn "${str}"
+			return 2
+		fi
+		str=${err_ag_finalized//SLOT/${finalized}}
+		if (( ${finalized} <= ${last_vote} )); then
+			str=${str//VOTE/${last_vote}}
+			warn "${str}"
+			return 2
+		fi
+		fd_enabled || cmd_id+=' --do-not-require-vote-history'
 	fi
 	
 	# run the transition
@@ -3540,7 +3525,7 @@ vote_off(){
 }
 
 vote_on(){
-	force=1 # make the consensus file optional
+	force=1 # take over without relying on the consensus file
 	wait4e $1 && rxtower
 }
 
