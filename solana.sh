@@ -3391,7 +3391,7 @@ txtower(){
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${remote}{.part,}"; is_dryrun && cmd_mv="echo '${cmd_mv}'"; } \
+	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${remote}{.part,}"; if is_dryrun; then cmd_mv="echo '${cmd_mv}'"; fi; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
