@@ -3442,7 +3442,8 @@ rxtower(){
 			error ${str} ${tip_force}
 		fi
 		sudo chown "$USER:" ${f}
-		local str=${msg_tower_ok//TIME/$(elapsed $mdiff)}
+		local str=${msg_tower_ok//FILE/${f##*/}}
+		str=${str//TIME/$(elapsed $mdiff)}
 		cmd_rm="echo ${str//TTL/${tower_ttl}}"
 	fi
 	
