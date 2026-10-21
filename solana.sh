@@ -3386,19 +3386,19 @@ txtower(){
 	
 	# the first SCP is a transport preflight before releasing the staked identity;
 	# the second one transfers the final consensus state after voting has stopped
-	local res str ssh_tower remote part status=0
+	local res str ssh_tower remote part cmd_mv status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; } \
+	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${part} ${remote}"; is_dryrun && cmd_mv="echo ${cmd_mv}"; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_prepared//REMOTE/${host}:${part}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" mv -f "${part}" "${remote}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${cmd_mv}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_released//REMOTE/${host}:${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
@@ -3417,6 +3417,7 @@ rxtower(){
 	
 	# make up commands
 	local f=$(get_tower)
+	is_dryrun && [ -s "${f}.part" ] && f+=.part
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
