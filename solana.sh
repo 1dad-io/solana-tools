@@ -3391,15 +3391,15 @@ txtower(){
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${part} ${remote}"; is_dryrun && cmd_mv="echo ${cmd_mv}"; } \
+	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${remote}{.part,}"; is_dryrun && cmd_mv="echo '${cmd_mv}'"; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_prepared//REMOTE/${host}:${part}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { str=${msg_tower_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_released//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${cmd_mv}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_released//REMOTE/${host}:${remote}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
