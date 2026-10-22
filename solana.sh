@@ -3422,12 +3422,12 @@ txtower(){
 	
 	# the first SCP is a transport preflight before releasing the staked identity;
 	# the second one transfers the final consensus state after voting has stopped
-	local res str ssh_tower remote part cmd_mv status=0
+	local res str ssh_tower remote part status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; cmd_mv="mv -fv ${remote}{.part,}"; if is_dryrun; then cmd_mv="echo '${cmd_mv}'"; fi; } \
+	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
@@ -3435,7 +3435,6 @@ txtower(){
 	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_released//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
-	&& { res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${cmd_mv}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
@@ -3453,7 +3452,6 @@ rxtower(){
 	
 	# make up commands
 	local f=$(get_tower)
-	is_dryrun && [ -s "${f}.part" ] && f+=.part
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
@@ -3468,8 +3466,14 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# a normal handoff must use a recent transferred consensus file
+	# a normal handoff must use a recent transferred consensus file;
+	# prefer .part and promote it locally, but allow a fresh .bin on retry
 	if [ "${force}" != 1 ]; then
+		cmd_rm=':'
+		if [ -s "${f}.part" ]; then
+			cmd_rm="${cmd_sudo} mv -fv ${f}.part ${f}"
+			f=${f}.part
+		fi
 		[ -s "${f}" ] || error ${err_file_missing//FILE/${f}} ${tip_force}
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
@@ -3478,10 +3482,10 @@ rxtower(){
 			str=${str//TIME/$(elapsed $mdiff)}
 			error ${str//TTL/${tower_ttl}} ${tip_force}
 		fi
-		sudo chown "$USER:" ${f}
+		is_dryrun || sudo chown "$USER:" ${f}
 		local str=${msg_file_modified//FILE/${f##*/}}
 		str=${str//TIME/$(elapsed $mdiff)}
-		cmd_rm="echo ${str//TTL/${tower_ttl}}"
+		local ok=${str//TTL/${tower_ttl}}
 	fi
 	
 	# lift the consensus file requirement only when explicitly forced
@@ -3495,19 +3499,17 @@ rxtower(){
 		local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
 		local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
 		if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
-			warn ${err_ag_state}
+			warn ${err_tower_state}
 			return 2
 		fi
-		local str=${err_ag_catchup//SLOT/${slot}}
 		if (( ${slot} < ${cluster_slot} )); then
-			str=${str//TIP/${cluster_slot}}
-			warn "${str}"
+			local str=${err_tower_behind//SLOT/${slot}}
+			warn "${str//TIP/${cluster_slot}}"
 			return 2
 		fi
-		str=${err_ag_finalized//SLOT/${finalized}}
 		if (( ${finalized} <= ${last_vote} )); then
-			str=${str//VOTE/${last_vote}}
-			warn "${str}"
+			local str=${err_tower_finalized//SLOT/${finalized}}
+			warn "${str//VOTE/${last_vote}}"
 			return 2
 		fi
 		fd_enabled || cmd_id+=' --do-not-require-vote-history'
@@ -3520,7 +3522,7 @@ rxtower(){
 	
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
-	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { [ -n "${ok}" ] && log "${ok}"; res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; }
 	local err=$(fd_sanitize $(echo "${res}" | grep -E -i 'err|failed'))
@@ -3992,7 +3994,7 @@ watchdog(){
 		fi
 	fi
 	
-	# check if we failed over; status=2 means Alpenglow isn't safe to take over yet
+	# check if we failed over; status=2 means takeover isn't safe yet
 	if [ "${failed}" == Y -a -n "${res}" -a ${status} -ne 2 ]; then
 		ready=R # do a ready check before taking any action in the new role
 		unset SMS; info ${msg_wd_disabled_recheck}; SMS=y
