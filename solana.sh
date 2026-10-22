@@ -1626,7 +1626,7 @@ menu_userdel(){
 	
 	# delete the user if confirmed
 	if menu_noyes "${msg_userdel_yn//USER/${user}}"; then
-		sudo deluser --remove-home ${user} || error ${err_usermod//USER/${user}}
+		sudo deluser --remove-home ${user} || error ${err_userdel//USER/${user}}
 	fi
 }
 
@@ -2960,7 +2960,7 @@ setup(){
 # BEGIN snapshot
 check_snapshot(){
 	local max_age=${1:-${snapshots_age}}
-	local status=1 str=${msg_snap_missing}
+	local status=1 str=${err_file_missing//FILE/*.zst}
 	local d; [ -z "${no_incremental_snapshots}" ] && d=${snapshots_inc} || d=${snapshots}
 	local f=`find -L ${d} -type f -name '*.zst' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -f2- -d' '`
 	if [ -f "${f}" ]; then
@@ -2970,11 +2970,12 @@ check_snapshot(){
 		ttl=$(ceil ${ttl}) # rounded up
 		if (( $mdiff <= ${ttl} )); then
 			status=0
-			local str=${msg_snap_ok}
+			str=${msg_file_modified}
 		else
-			local str=${msg_snap_outdated}
+			str=${msg_file_outdated}
 		fi
 	fi
+	str=${str//FILE/${f##*/}}
 	str=${str//TTL/${ttl}}
 	echo ${str//TIME/$(elapsed $mdiff)}
 	return ${status}
@@ -3360,7 +3361,7 @@ txtower(){
 	
 	# check if the consensus file exists
 	local f=$(get_tower)
-	[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}}
+	[ -s "${f}" ] || error ${err_file_missing//FILE/${f}}
 	
 	# make up commands
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
@@ -3434,15 +3435,16 @@ rxtower(){
 	
 	# a normal handoff must use a recent transferred consensus file
 	if [ "${force}" != 1 ]; then
-		[ -s "${f}" ] || error ${err_tower_missing//FILE/${f}} ${tip_force}
+		[ -s "${f}" ] || error ${err_file_missing//FILE/${f}} ${tip_force}
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
 		if (( $mdiff > $tower_ttl )); then
-			local str=${err_tower_outdated//TIME/$(elapsed $mdiff)}
-			error ${str} ${tip_force}
+			local str=${msg_file_outdated//FILE/${f##*/}}
+			str=${str//TIME/$(elapsed $mdiff)}
+			error ${str//TTL/${tower_ttl}} ${tip_force}
 		fi
 		sudo chown "$USER:" ${f}
-		local str=${msg_tower_ok//FILE/${f##*/}}
+		local str=${msg_file_modified//FILE/${f##*/}}
 		str=${str//TIME/$(elapsed $mdiff)}
 		cmd_rm="echo ${str//TTL/${tower_ttl}}"
 	fi
