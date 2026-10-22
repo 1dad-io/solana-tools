@@ -7,6 +7,6 @@ SHELL=/bin/bash
 0 6 * * * touch $HOME/solana-tools/solana-tools.wd-ping &>/dev/null
 0 * * * * sudo $HOME/solana-tools/solana.sh trim -c -d 100 &>/dev/null
 * * * * * sudo $HOME/solana-tools/solana.sh watchdog -c &>/dev/null
-0 * * * * sleep $((RANDOM\%60)); $HOME/solana-tools/solana.sh airdrop -c -p &>/dev/null
-* * * * * sleep $((RANDOM\%60)); $HOME/solana-tools/solana.sh balance -c &>/dev/null
+0 * * * * sleep $((RANDOM\%50+10)); $HOME/solana-tools/solana.sh airdrop -c -p &>/dev/null
+* * * * * sleep $((RANDOM\%50+10)); $HOME/solana-tools/solana.sh balance -c &>/dev/null
 */5 * * * * $HOME/solana-tools/solana.sh stakes -c &>/dev/null
