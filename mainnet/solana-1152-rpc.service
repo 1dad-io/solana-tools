@@ -54,7 +54,6 @@ Environment="BAM_URL=http://ewr.mainnet.bam.jito.wtf"
 # Environment="BAM_URL=http://tyo.mainnet.bam.jito.wtf"
 WorkingDirectory=/home/ubuntu/solana-tools
 ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
-	--tower /mnt/data/tower \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
 	--snapshots /mnt/snap/snapshots \
