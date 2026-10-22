@@ -570,7 +570,7 @@ unset pos_args opt
 
 # BEGIN options-systemd
 get_env(){ cat $FILE | sed -n "s/.*$1=\(\)/\1/p" | awk '{print $1}' | tr -d '"'; }
-get_opt(){ local v=`cat $FILE | sed -n "s/--$1\(=\|[[:space:]]\)\+//p"`; echo ${v} | awk -v fb="$2" '{print ($1==""?fb:$1)}'; }
+get_opt(){ local v=`sed -En "s/--$1(=|[[:space:]])+//p" "$FILE"`; echo ${v} | awk -v fb="$2" '{print ($1==""?fb:$1)}'; }
 get_systemd(){
 	local files=(${tool%/*}/${moniker%%[-]*}/solana*.service)
 	echo `basename ${files[0]} .service` # pick the first
@@ -673,8 +673,12 @@ set_cmd(){
 	is_dryrun && cmd_user='echo' || cmd_user=${sudo}
 	
 	# check for coreutils version
-	local v=`cp --version | head -n1 | sed 's/[^0-9.]*//g'`
-	x=$(cmp_ver "${v}" 9.3) && no_clobber='--update=none' || no_clobber='-n'
+	if is_macos; then
+		no_clobber='-n'
+	else
+		local v=`cp --version | head -n1 | sed 's/[^0-9.]*//g'`
+		cmp_ver "${v}" 9.3 && no_clobber='--update=none' || no_clobber='-n'
+	fi
 	
 	# check for a leftover
 	[ -s "${oldunit}" ] && local old_unit=$(<${oldunit})
