@@ -143,7 +143,7 @@ is_staked(){ cmp -s ${keypair} ${staked}; }
 user_chown(){ [ -n "$1" ] || error ${err_arg}; USER=$1; sudo chown -R "$USER:" ${tool%/*}; }
 user_exists(){ [[ -n `id -u "$1" 2>/dev/null` ]]; }
 [ -n "$SSH_CLIENT" ] && client=`echo $SSH_CLIENT | awk '{print $1}'` || client=systemd
-dirs=(tower ledger accounts accounts_index accounts_shrink snapshots snapshots_inc)
+dirs=(ledger accounts accounts_index accounts_shrink snapshots snapshots_inc)
 tool=`readlink -f $0`
 lang=${tool%/*}/etc/default/${pkg_name}.lang
 term=${tool%/*}/etc/tput.sh
@@ -602,7 +602,6 @@ read_systemd(){
 	[ "${dz_keypair}" == "${dz_keypair##*/}" ] && dz_keypair=${keypair%/*}/${dz_keypair}
 	
 	ledger=$(get_opt 'ledger')
-	tower=$(get_opt 'tower' ${ledger})
 	accounts=$(get_opt 'accounts' "${ledger}/accounts")
 	accounts_index=$(get_opt 'accounts-index-path')
 	accounts_shrink=$(get_opt 'account-shrink-path')
@@ -647,7 +646,6 @@ set_bin(){
 	installer=${bin}/agave-install
 	validator=${bin}/agave-validator
 	ledger_tool=${bin}/agave-ledger-tool
-	# watchtower=${bin}/agave-watchtower
 	
 	# firedancer
 	fdctl=${d}/fd/${TAG_FD:-active_release}/bin/fdctl
@@ -920,7 +918,7 @@ help(){
 	echo -e "        ${CG}check-snapshot${NC} [NUM_SLOTS] Check if snapshot is less than this many slots behind [default: ${snapshots_age}]"
 	echo -e "        ${CG}cpu-tuner${NC} [GOVERNOR]       Tune CPU settings for the given governor [default: $(get_gov)]"
 	echo -e "        ${CG}dz${NC} [SUBCOMMAND]            Run doublezero with any: up/down/pda/fees/fund/init/setup/user"
-	echo -e "        ${CG}export${NC} <bin|log|tower>     Export environment variables"
+	echo -e "        ${CG}export${NC} <bin|log|ledger>    Export environment variables"
 	echo -e "        ${CG}jito-reload${NC}                Hot reload the Jito configuration"
 	echo -e "        ${CG}leader-slot${NC} [-1]           Show countdown to the next leader slot"
 	echo -e "        ${CG}make-snapshot${NC} <SLOT>       Create a new ledger snapshot for the given slot"
@@ -1857,8 +1855,6 @@ restart(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	
 	# prepare the cleanup
-	local cmd_clean='echo no-clean'
-	# the tower directory is never cleaned
 	[ "${clean}" == 'all' ] && clean='ledger,accounts,snapshots'
 	local arr=(`echo ${clean} | tr ',' "\n"`) args=() d v
 	for v in "${arr[@]}"; do
@@ -1866,7 +1862,17 @@ restart(){
 			[[ "${d}" == *"${v}"* ]] && args+=("${!d}")
 		done
 	done
-	[ "${#args[@]}" -gt 0 ] && cmd_clean="${cmd_sudo} rm -rf "$(implode ' ' "${args[@]}")
+	clean_data(){
+		[ "${#args[@]}" -gt 0 ] || { echo no-clean; return; }
+		local d
+		for d in "${args[@]}"; do
+			if [ "${d}" == "${ledger}" ]; then
+				${cmd_sudo} find "${ledger}" -mindepth 1 -maxdepth 1 ! -name 'vote_history-*.bin' -exec rm -rf {} +
+			else
+				${cmd_sudo} rm -rf "${d}"
+			fi
+		done
+	}
 	
 	# prepare the move
 	local cmd_move='echo no-move'
@@ -1904,7 +1910,7 @@ restart(){
 	
 	trim # trim all mounted FS
 	[ -z "${now}" ] && info ${msg_restart_window}
-	wait4r && stopper && ${cmd_move} && ${cmd_link} && ${cmd_clean} && ${cmd_reboot} && starter && ok
+	wait4r && stopper && ${cmd_move} && ${cmd_link} && clean_data && ${cmd_reboot} && starter && ok
 }
 # END start/stop/restart
 
@@ -3364,7 +3370,7 @@ scp_(){
 }
 get_tower(){
 	local pubkey=$(pubkey ${staked})
-	echo "${tower}/vote_history-${pubkey}.bin"
+	echo "${ledger}/vote_history-${pubkey}.bin"
 }
 txtower(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
@@ -3422,12 +3428,12 @@ txtower(){
 	
 	# the first SCP is a transport preflight before releasing the staked identity;
 	# the second one transfers the final consensus state after voting has stopped
-	local res str ssh_tower remote part status=0
+	local res str ssh_ledger remote part status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
-	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export tower` || status=1; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_tower=${res}; } \
-	&& { remote=${ssh_tower}/${f##*/}; part=${remote}.part; } \
+	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export ledger` || status=1; } && [ ${status} -eq 0 ] \
+	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_ledger=${res}; } \
+	&& { remote=${ssh_ledger}/${f##*/}; part=${remote}.part; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_tower_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
