@@ -3017,22 +3017,53 @@ make_snapshot(){
 
 # BEGIN stats
 leader_slot(){
-	[ -f "${log}" ] || error ${err_file_read//FILE/${log}}
-	get_pkg bc
+	get_pkg bc jq
+	local u=$(if_fn is_running ? localhost : "${rpc_url}")
 	local pubkey=$(pubkey ${staked})
+	local next
+	
 	echo -e "${LN}${msg_slot_leader}${NC}"
 	while true; do
-		local slots=`tail -n10000 ${log} 2>/dev/null | awk -v pattern="${pubkey}.+within slot" '$0 ~ pattern {printf "%d\n", $18-$12}' | tail -1`
-		[[ "${slots}" -lt 0 ]] && slots=0
-		local S=`bc <<< "${slots}*0.5" 2>/dev/null`
+		local slot=$(json_rpc ${u} getSlot '[{"commitment":"processed"}]')
+		is_num "${slot}" || error ${err_rpc_connect}
+		
+		if ! is_num "${next}" || (( ${slot} >= ${next} )); then
+			local info=$(json_rpc ${u} getEpochInfo '[{"commitment":"processed"}]')
+			local index=`echo "${info}" | jq -r '.slotIndex // empty'`
+			local slots_in_epoch=`echo "${info}" | jq -r '.slotsInEpoch // empty'`
+			local absolute=`echo "${info}" | jq -r '.absoluteSlot // empty'`
+			
+			is_num "${index}" && is_num "${slots_in_epoch}" && is_num "${absolute}" || error ${err_rpc_connect}
+			
+			local first=$((${absolute}-${index}))
+			local params='[null,{"commitment":"processed","identity":"'${pubkey}'"}]'
+			local schedule=$(json_rpc ${u} getLeaderSchedule "${params}")
+			local rel=`echo "${schedule}" | jq -r --arg pubkey "${pubkey}" '.[$pubkey][]?' | awk -v idx=${index} '$1 > idx {print; exit}'`
+			
+			if ! is_num "${rel}"; then
+				first=$((${first}+${slots_in_epoch}))
+				params='['${first}',{"commitment":"processed","identity":"'${pubkey}'"}]'
+				schedule=$(json_rpc ${u} getLeaderSchedule "${params}")
+				rel=`echo "${schedule}" | jq -r --arg pubkey "${pubkey}" '.[$pubkey][]?' | head -1`
+			fi
+			
+			is_num "${rel}" || error ${err_rpc_connect}
+			next=$((${first}+${rel}))
+		fi
+		
+		local slots=$((${next}-${slot}))
+		(( ${slots} < 0 )) && slots=0
+		local S=`bc <<< "scale=1; ${slots}/${tower_slot_speed}" 2>/dev/null`
 		local H=`bc <<< "$S/3600" 2>/dev/null`
 		local M=`bc <<< "$S/60-$H*60" 2>/dev/null`
 		S=`bc <<< "$S-$H*3600-$M*60" 2>/dev/null`
+		
 		printf '   %d hr %.0f min %.0f sec   \r' $H $M $S
 		if [ -n "${oneshot}" ]; then
 			printf '\n'
 			break
 		fi
+		sleep ${poll_interval}
 	done
 }
 
