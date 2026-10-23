@@ -233,9 +233,8 @@ read_conf(){
 	poll_interval=${poll_interval:-1}
 	relayerd=${relayerd:-relayer}
 	# systemd defaults to RAM profile
-	tower_slot_delay=${tower_slot_delay:-0} # slots
-	tower_slot_speed=${tower_slot_speed:-5} # slots, 1s / 200ms per slot
-	tower_ttl_slots=${tower_ttl_slots:-256}
+	slots_per_second=${slots_per_second:-5} # 1s / 200ms per slot
+	state_ttl_slots=${state_ttl_slots:-256}
 	trim_ttl=${trim_ttl:-3600} # hours
 	trim_idle_time=${trim_idle_time:-5} # mins
 	
@@ -269,9 +268,8 @@ read_conf(){
 	stakes=${path}/data/stakes/EPOCH.json
 	validators=${path}/data/validators.json
 	dz_fees_csv=${path}/data/fees/EPOCH.csv
-	tower_delay=`echo "scale=1; ${tower_slot_delay}/${tower_slot_speed}" | bc | sed 's/^\./0./'`
-	tower_ttl=`echo "scale=1; ${tower_ttl_slots}/${tower_slot_speed}" | bc | sed 's/^\./0./'`
-	tower_ttl=$(ceil ${tower_ttl}) # rounded up
+	state_ttl_seconds=`echo "scale=1; ${state_ttl_slots}/${slots_per_second}" | bc | sed 's/^\./0./'`
+	state_ttl_seconds=$(ceil ${state_ttl_seconds}) # rounded up
 	# firedancer
 	fd_conf=${path}/config.toml
 }; read_conf
@@ -540,7 +538,7 @@ while test $# -gt 0; do
 	jito-reload|relayer|restart-relayer|update-relayer|\
 	dz|\
 	setup|\
-	txtower|rxtower|vote-off|vote-on|watchdog|\
+	txstate|rxstate|vote-off|vote-on|watchdog|\
 	cpu-tuner|sys-tuner|validator)
 		# isolate action from subcommands
 		if [ -n "${action}" ]; then
@@ -548,7 +546,7 @@ while test $# -gt 0; do
 		else
 			[ "$1" == 'export' ] && action=${1}_ || action=${1//-/_}
 			[ "$1" == 'wait-for-restart' ] && action=wait4r
-			if [[ "txtower" == *${1}* ]]; then
+			if [[ "txstate" == *${1}* ]]; then
 				# we need watchdog to be idle here
 				PIDFILE=${tool%/*}/watchdog.pid
 				PIDWAIT=${lock_timeout}
@@ -929,7 +927,7 @@ help(){
 	echo -e "        ${CG}relayer${NC} [status]           Run relayer (only used by systemd)"
 	echo -e "        ${CG}restart${NC} [restart flags]    Restart validator safely within the restart window"
 	echo -e "        ${CG}restart-relayer${NC} [--now]    Restart relayer safely within the restart window"
-	echo -e "        ${CG}rxtower${NC}                    Transition identity from the voting validator"
+	echo -e "        ${CG}rxstate${NC}                    Transition identity from the voting validator"
 	echo -e "        ${CG}setup${NC} [--unstaked]         Setup a validator by installing prerequisites"
 	echo -e "        ${CG}slots${NC} [EPOCH] [-q]         Show leader schedule (use -q for a quick view)"
 	echo -e "        ${CG}stakes${NC}                     Fetch the validator stakes by the vote account"
@@ -937,7 +935,7 @@ help(){
 	echo -e "        ${CG}stop${NC}  [EPOCH]              Stop the validator at epoch boundary, or now"
 	echo -e "        ${CG}sys-tuner${NC}                  Tune system settings"
 	echo -e "        ${CG}trim${NC} [-f]                  Trim all mounted FS safely within the restart window"
-	echo -e "        ${CG}txtower${NC} [REMOTE_HOST]      Transition identity to a non-voting validator [default: ssh_host]"
+	echo -e "        ${CG}txstate${NC} [REMOTE_HOST]      Transition identity to a non-voting validator [default: ssh_host]"
 	echo -e "        ${CG}unswap${NC}                     Free swap by swapping back into RAM"
 	echo -e "        ${CG}update${NC} [--fd]              Update validator safely within the restart window"
 	echo -e "        ${CG}update-relayer${NC}             Update relayer safely within the restart window"
@@ -1803,7 +1801,7 @@ wait4r(){
 	if [ -n "$1" ]; then
 		# skip new snapshot check and allow 100% delinquency when
 		# --min-idle-time value is overridden by the function arg
-		# used by trim, restart_relayer, txtower
+		# used by trim, restart_relayer, txstate
 		local cmd="${cmd_wait} --max-delinquent-stake 100 --min-idle-time $1 --skip-new-snapshot-check"
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
@@ -2976,7 +2974,7 @@ check_snapshot(){
 	if [ -f "${f}" ]; then
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
-		local ttl=`echo "scale=1; ${max_age}/${tower_slot_speed}" | bc`
+		local ttl=`echo "scale=1; ${max_age}/${slots_per_second}" | bc`
 		ttl=$(ceil ${ttl}) # rounded up
 		if (( $mdiff <= ${ttl} )); then
 			status=0
@@ -3059,7 +3057,7 @@ leader_slot(){
 		
 		local slots=$((${next}-${slot}))
 		(( ${slots} < 0 )) && slots=0
-		local S=`bc <<< "scale=1; ${slots}/${tower_slot_speed}" 2>/dev/null`
+		local S=`bc <<< "scale=1; ${slots}/${slots_per_second}" 2>/dev/null`
 		local H=`bc <<< "$S/3600" 2>/dev/null`
 		local M=`bc <<< "$S/60-$H*60" 2>/dev/null`
 		S=`bc <<< "$S-$H*3600-$M*60" 2>/dev/null`
@@ -3368,13 +3366,13 @@ scp_(){
 	ssh_open "${user}" "${host}" "${port}" || return 1
 	timeout 20s ${sudo} scp -p "${ssh_opts[@]}" -o ControlPath="${path}" -P "${port}" "${src}" "${target}:${dest}" 2>&1
 }
-get_tower(){
+get_vote_history(){
 	local pubkey=$(pubkey ${staked})
 	echo "${ledger}/vote_history-${pubkey}.bin"
 }
-txtower(){
+txstate(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
-	[ -n "${ssh_host}" ]   || error ${err_bind} # required to transfer the tower
+	[ -n "${ssh_host}" ]   || error ${err_bind} # required to transfer state
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
 	[ -s "${auth_voter}" ] || error ${err_file_read//FILE/${auth_voter}}
 	[ -s "${staked}" ]     || error ${err_file_read//FILE/${staked}}
@@ -3400,8 +3398,8 @@ txtower(){
 		[ "${force}" == 1 ] && warn ${errmsg} ${tip_forced} || error ${errmsg} ${tip_force}
 	fi
 	
-	# check if the consensus file exists
-	local f=$(get_tower)
+	# check if the vote history exists
+	local f=$(get_vote_history)
 	[ -s "${f}" ] || error ${err_file_missing//FILE/${f}}
 	
 	# make up commands
@@ -3432,16 +3430,15 @@ txtower(){
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export ledger` || status=1; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_ledger=${res}; } \
+	&& { str=${msg_state_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_ledger=${res}; } \
 	&& { remote=${ssh_ledger}/${f##*/}; part=${remote}.part; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { str=${msg_state_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_delaying//SLOTS/${tower_slot_delay}}; log "${str//TIME/${tower_delay}s}"; sleep ${tower_delay}; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_tower_released//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
-	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxtower "${args[@]}"` || status=1; \
+	&& { str=${msg_state_released//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxstate "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
 	local elapsed=$(($(date +%s)-$started))
@@ -3449,7 +3446,7 @@ txtower(){
 	log "${msg_log_stop//TIME/$(elapsed $elapsed)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
-rxtower(){
+rxstate(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to start voting
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
@@ -3457,7 +3454,7 @@ rxtower(){
 	[ -s "${staked}" ]     || error ${err_file_read//FILE/${staked}}
 	
 	# make up commands
-	local f=$(get_tower)
+	local f=$(get_vote_history)
 	local cmd_rm="${cmd_sudo} rm -fv ${f}"
 	if fd_enabled && [ -f "${fdctl}" ]; then # firedancer
 		local cmd_id="${cmd_fd//CMD/set-identity ${staked}} --force"
@@ -3472,7 +3469,7 @@ rxtower(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# a normal handoff must use a recent transferred consensus file;
+	# a normal handoff must use recent transferred vote history;
 	# prefer .part and promote it locally, but allow a fresh .bin on retry
 	if [ "${force}" != 1 ]; then
 		cmd_rm=':'
@@ -3483,18 +3480,18 @@ rxtower(){
 		[ -s "${f}" ] || error ${err_file_missing//FILE/${f}} ${tip_force}
 		local mtime=`${cmd_mtime} ${f}`
 		local mdiff=$(($(date +%s)-$mtime))
-		if (( $mdiff > $tower_ttl )); then
+		if (( $mdiff > $state_ttl_seconds )); then
 			local str=${msg_file_outdated//FILE/${f##*/}}
 			str=${str//TIME/$(elapsed $mdiff)}
-			error ${str//TTL/${tower_ttl}} ${tip_force}
+			error ${str//TTL/${state_ttl_seconds}} ${tip_force}
 		fi
 		is_dryrun || sudo chown "$USER:" ${f}
 		local str=${msg_file_modified//FILE/${f##*/}}
 		str=${str//TIME/$(elapsed $mdiff)}
-		local ok=${str//TTL/${tower_ttl}}
+		local ok=${str//TTL/${state_ttl_seconds}}
 	fi
 	
-	# lift the consensus file requirement only when explicitly forced
+	# lift the vote history requirement only when explicitly forced
 	if [ "${force}" == 1 ]; then
 		# without vote history, replay must first make the primary's last vote
 		# safe before set-identity can reconstruct the voting state
@@ -3505,16 +3502,16 @@ rxtower(){
 		local votes=$(json_rpc ${rpc_url} getVoteAccounts "${params}")
 		local last_vote=`echo "${votes}" | jq -r '.current[0].lastVote // .delinquent[0].lastVote'`
 		if ! is_num ${cluster_slot} || ! is_num ${slot} || ! is_num ${finalized} || ! is_num ${last_vote}; then
-			warn ${err_tower_state}
+			warn ${err_state_unknown}
 			return 2
 		fi
 		if (( ${slot} < ${cluster_slot} )); then
-			local str=${err_tower_behind//SLOT/${slot}}
+			local str=${err_state_behind//SLOT/${slot}}
 			warn "${str//TIP/${cluster_slot}}"
 			return 2
 		fi
 		if (( ${finalized} <= ${last_vote} )); then
-			local str=${err_tower_finalized//SLOT/${finalized}}
+			local str=${err_state_finalized//SLOT/${finalized}}
 			warn "${str//VOTE/${last_vote}}"
 			return 2
 		fi
@@ -3528,14 +3525,15 @@ rxtower(){
 	
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
-	&& { [ -n "${ok}" ] && log "${ok}"; res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
+	&& { [ -n "${ok}" ] && log "${ok}"; } \
+	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; }
 	local err=$(fd_sanitize $(echo "${res}" | grep -E -i 'err|failed'))
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
-# simplified version of txtower() without the tower file transfer
+# simplified version of txstate() without the state transfer
 vote_off(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to stop voting
@@ -3572,8 +3570,8 @@ vote_off(){
 }
 
 vote_on(){
-	force=1 # take over without relying on the consensus file
-	wait4e $1 && rxtower
+	force=1 # take over without relying on vote history
+	wait4e $1 && rxstate
 }
 
 watchdog(){
@@ -3581,7 +3579,7 @@ watchdog(){
 	LOG=y; rotate $LOGFILE
 	# Possible scenarios of what can cause a failover to be triggered:
 	#
-	# 1a - on demand, by locally executing txtower() on the co-hosted
+	# 1a - on demand, by locally executing txstate() on the co-hosted
 	# staked validator (planned transition) - it's NOT monitored here;
 	#
 	# 2. SELF-DETECTED
@@ -3597,18 +3595,18 @@ watchdog(){
 	#
 	# 2d - on RPC failure of the co-hosted staked validator, as well as
 	# 2e - on delinquency of the co-hosted staked validator, by locally
-	# executing txtower(-n) to transfer the consensus file and stop voting;
+	# executing txstate(-n) to transfer state and stop voting;
 	#
 	# 2f - on the absence of the remote unstaked validator (no action,
 	# a blocker for other actions, monitoring purposes only);
 	#
 	# 2a, 2b and 2c should accompany the remote unstaked validator to
 	# safely detect the delinquency of the staked validator and start
-	# voting by force-executing rxtower(-f) (remotely-detected by 3e):
+	# voting by force-executing rxstate(-f) (remotely-detected by 3e):
 	#
 	# 3. REMOTELY-DETECTED
 	# 3e - on delinquency of the remote staked validator, by locally
-	# force-executing rxtower(-f) on the co-hosted unstaked validator
+	# force-executing rxstate(-f) on the co-hosted unstaked validator
 	# after 2e timeout exceeded an extra threshold.
 	#
 	# To summarize the above, we will only handle 2a-e & 3e scenarios
@@ -3894,8 +3892,8 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
-					res=$(txtower ${bindip}) || status=1 # no failures accepted
-					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
+					res=$(txstate ${bindip}) || status=1 # no failures accepted
+					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
 				fi
@@ -3917,8 +3915,8 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
-					res=$(txtower ${bindip}) || status=1 # no failures accepted
-					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
+					res=$(txstate ${bindip}) || status=1 # no failures accepted
+					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
 				fi
@@ -3933,9 +3931,10 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while delinquent
-#					res=$(txtower ${bindip}) || status=1 # no failures accepted
+#					res=$(txstate ${bindip}) || status=1 # no failures accepted
+#					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
 					res=$(vote_off) || status=1 # may but shouldn't fail
-					is_ok && ok ${msg_tower_tx} || warn ${msg_tower_tx} ${tip_errors}
+					is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}
 				else
 					log "${err_bind}"
 				fi
