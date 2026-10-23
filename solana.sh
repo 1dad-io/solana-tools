@@ -3426,18 +3426,18 @@ txstate(){
 	
 	# the first SCP is a transport preflight before releasing the staked identity;
 	# the second one transfers the final consensus state after voting has stopped
-	local res str ssh_ledger remote part status=0
+	local res str ledger remote part status=0
 	[ -z "${now}" ] && info ${msg_restart_window}
 	wait4r ${min_idle_time} && log "${msg_log_start//CLIENT/${client}}${tip}" && local started=`date +%s` \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" export ledger` || status=1; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_state_imported//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; ssh_ledger=${res}; } \
-	&& { remote=${ssh_ledger}/${f##*/}; part=${remote}.part; } \
+	&& { ledger=${res}; str=${msg_state_initialized//PATH/${ledger}}; str=${str//HOST/${host}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { remote=${ledger}/${f##*/}; part=${remote}.part; } \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_state_prepared//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { str=${msg_state_transferred//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
-	&& { str=${msg_state_released//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
+	&& { str=${msg_state_transferred//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
 	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxstate "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
@@ -3893,7 +3893,7 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
 					res=$(txstate ${bindip}) || status=1 # no failures accepted
-					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
+					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
 				fi
@@ -3916,7 +3916,7 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
 					res=$(txstate ${bindip}) || status=1 # no failures accepted
-					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
+					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
 				fi
@@ -3932,7 +3932,7 @@ watchdog(){
 					SMS=y
 					now=1 # no slots can be processed while delinquent
 #					res=$(txstate ${bindip}) || status=1 # no failures accepted
-#					is_ok && ok ${msg_state_transferred} || warn ${msg_state_transferred} ${tip_errors}
+#					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 					res=$(vote_off) || status=1 # may but shouldn't fail
 					is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}
 				else
