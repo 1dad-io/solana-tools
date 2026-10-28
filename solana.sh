@@ -538,7 +538,7 @@ while test $# -gt 0; do
 	jito-reload|relayer|restart-relayer|update-relayer|\
 	dz|\
 	setup|\
-	txstate|rxstate|vote-off|vote-on|watchdog|\
+	txvote|rxvote|vote-off|vote-on|watchdog|\
 	cpu-tuner|sys-tuner|validator)
 		# isolate action from subcommands
 		if [ -n "${action}" ]; then
@@ -546,7 +546,7 @@ while test $# -gt 0; do
 		else
 			[ "$1" == 'export' ] && action=${1}_ || action=${1//-/_}
 			[ "$1" == 'wait-for-restart' ] && action=wait4r
-			if [[ "txstate" == *${1}* ]]; then
+			if [[ "txvote" == *${1}* ]]; then
 				# we need watchdog to be idle here
 				PIDFILE=${tool%/*}/watchdog.pid
 				PIDWAIT=${lock_timeout}
@@ -927,7 +927,7 @@ help(){
 	echo -e "        ${CG}relayer${NC} [status]           Run relayer (only used by systemd)"
 	echo -e "        ${CG}restart${NC} [restart flags]    Restart validator safely within the restart window"
 	echo -e "        ${CG}restart-relayer${NC} [--now]    Restart relayer safely within the restart window"
-	echo -e "        ${CG}rxstate${NC}                    Transition identity from the voting validator"
+	echo -e "        ${CG}rxvote${NC}                     Transition identity from the voting validator"
 	echo -e "        ${CG}setup${NC} [--unstaked]         Setup a validator by installing prerequisites"
 	echo -e "        ${CG}slots${NC} [EPOCH] [-q]         Show leader schedule (use -q for a quick view)"
 	echo -e "        ${CG}stakes${NC}                     Fetch the validator stakes by the vote account"
@@ -935,7 +935,7 @@ help(){
 	echo -e "        ${CG}stop${NC}  [EPOCH]              Stop the validator at epoch boundary, or now"
 	echo -e "        ${CG}sys-tuner${NC}                  Tune system settings"
 	echo -e "        ${CG}trim${NC} [-f]                  Trim all mounted FS safely within the restart window"
-	echo -e "        ${CG}txstate${NC} [REMOTE_HOST]      Transition identity to a non-voting validator [default: ssh_host]"
+	echo -e "        ${CG}txvote${NC} [REMOTE_HOST]       Transition identity to a non-voting validator [default: ssh_host]"
 	echo -e "        ${CG}unswap${NC}                     Free swap by swapping back into RAM"
 	echo -e "        ${CG}update${NC} [--fd]              Update validator safely within the restart window"
 	echo -e "        ${CG}update-relayer${NC}             Update relayer safely within the restart window"
@@ -1801,7 +1801,7 @@ wait4r(){
 	if [ -n "$1" ]; then
 		# skip new snapshot check and allow 100% delinquency when
 		# --min-idle-time value is overridden by the function arg
-		# used by trim, restart_relayer, txstate
+		# used by trim, restart_relayer, txvote
 		local cmd="${cmd_wait} --max-delinquent-stake 100 --min-idle-time $1 --skip-new-snapshot-check"
 	else
 		local cmd="${cmd_wait} --max-delinquent-stake ${max_delinquent} --min-idle-time ${min_idle_time}"
@@ -3370,7 +3370,7 @@ get_vote_history(){
 	local pubkey=$(pubkey ${staked})
 	echo "${ledger}/vote_history-${pubkey}.bin"
 }
-txstate(){
+txvote(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	[ -n "${ssh_host}" ]   || error ${err_bind} # required to transfer state
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
@@ -3438,7 +3438,7 @@ txstate(){
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { SECONDS=0; res=`scp_ "${ssh_user}" "${host}" "${ssh_port}" "${f}" "${part}"` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { str=${msg_state_transferred//FILE/${part##*/}}; str=${str//REMOTE/${host}:${part%/*}}; log "${str//TIME/$(elapsed $SECONDS)}"; } \
-	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxstate "${args[@]}"` || status=1; \
+	&& { SECONDS=0; res=`ssh_ "${ssh_user}" "${host}" "${ssh_port}" "${ssh_tool}" rxvote "${args[@]}"` || status=1; \
 		log "${res} by ${host} in $(elapsed $SECONDS)"; }
 	
 	local elapsed=$(($(date +%s)-$started))
@@ -3446,7 +3446,7 @@ txstate(){
 	log "${msg_log_stop//TIME/$(elapsed $elapsed)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
-rxstate(){
+rxvote(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to start voting
 	[ -n "${auth_voter}" ] || error ${err_auth_voter}
@@ -3506,12 +3506,12 @@ rxstate(){
 			return 2
 		fi
 		if (( ${slot} < ${cluster_slot} )); then
-			local str=${err_state_behind//SLOT/${slot}}
+			local str=${err_slot_behind//SLOT/${slot}}
 			warn "${str//TIP/${cluster_slot}}"
 			return 2
 		fi
 		if (( ${finalized} <= ${last_vote} )); then
-			local str=${err_state_finalized//SLOT/${finalized}}
+			local str=${err_slot_not_finalized//SLOT/${finalized}}
 			warn "${str//VOTE/${last_vote}}"
 			return 2
 		fi
@@ -3533,7 +3533,7 @@ rxstate(){
 	log "${msg_log_stop//TIME/$(elapsed $SECONDS)}" && [ ${status} -eq 0 ] && ok || error ${err}
 }
 
-# simplified version of txstate() without the state transfer
+# simplified version of txvote() without transferring vote history
 vote_off(){
 	is_dryrun || is_linux || { warn ${err_unsupported_os}; return; }
 	# ssh_host is not required to stop voting
@@ -3571,7 +3571,7 @@ vote_off(){
 
 vote_on(){
 	force=1 # take over without relying on vote history
-	wait4e $1 && rxstate
+	wait4e $1 && rxvote
 }
 
 watchdog(){
@@ -3579,7 +3579,7 @@ watchdog(){
 	LOG=y; rotate $LOGFILE
 	# Possible scenarios of what can cause a failover to be triggered:
 	#
-	# 1a - on demand, by locally executing txstate() on the co-hosted
+	# 1a - on demand, by locally executing txvote() on the co-hosted
 	# staked validator (planned transition) - it's NOT monitored here;
 	#
 	# 2. SELF-DETECTED
@@ -3595,18 +3595,18 @@ watchdog(){
 	#
 	# 2d - on RPC failure of the co-hosted staked validator, as well as
 	# 2e - on delinquency of the co-hosted staked validator, by locally
-	# executing txstate(-n) to transfer state and stop voting;
+	# executing txvote(-n) to transfer state and stop voting;
 	#
 	# 2f - on the absence of the remote unstaked validator (no action,
 	# a blocker for other actions, monitoring purposes only);
 	#
 	# 2a, 2b and 2c should accompany the remote unstaked validator to
 	# safely detect the delinquency of the staked validator and start
-	# voting by force-executing rxstate(-f) (remotely-detected by 3e):
+	# voting by force-executing rxvote(-f) (remotely-detected by 3e):
 	#
 	# 3. REMOTELY-DETECTED
 	# 3e - on delinquency of the remote staked validator, by locally
-	# force-executing rxstate(-f) on the co-hosted unstaked validator
+	# force-executing rxvote(-f) on the co-hosted unstaked validator
 	# after 2e timeout exceeded an extra threshold.
 	#
 	# To summarize the above, we will only handle 2a-e & 3e scenarios
@@ -3892,7 +3892,7 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
-					res=$(txstate ${bindip}) || status=1 # no failures accepted
+					res=$(txvote ${bindip}) || status=1 # no failures accepted
 					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3915,7 +3915,7 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while RPC is down
-					res=$(txstate ${bindip}) || status=1 # no failures accepted
+					res=$(txvote ${bindip}) || status=1 # no failures accepted
 					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 				else
 					log "${err_bind}"
@@ -3931,7 +3931,7 @@ watchdog(){
 				if [ -n "${ssh_host}" ]; then
 					SMS=y
 					now=1 # no slots can be processed while delinquent
-#					res=$(txstate ${bindip}) || status=1 # no failures accepted
+#					res=$(txvote ${bindip}) || status=1 # no failures accepted
 #					is_ok && ok ${msg_vote_transferred} || warn ${msg_vote_transferred} ${tip_errors}
 					res=$(vote_off) || status=1 # may but shouldn't fail
 					is_ok && ok ${msg_vote_off} || warn ${msg_vote_off} ${tip_errors}

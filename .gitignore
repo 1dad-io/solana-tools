@@ -6,7 +6,7 @@
 /keys/*.json
 /keys/relayer/
 /rakurai-validator/
-/solana-patch/
+/solana-patch
 /solana-snapshot-finder
 **/data/*
 
