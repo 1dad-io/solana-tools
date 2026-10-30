@@ -19,7 +19,7 @@ LimitNOFILE=1000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=mainnet-beta,u=mainnet-beta_write,p=password"
-Environment=TAG=v4.3.2-jito
+Environment=TAG=v4.4.0-jito
 # [Amsterdam]
 # Environment="BLOCK_ENGINE_URL=https://amsterdam.mainnet.block-engine.jito.wtf"
 # Environment="SHRED_RECEIVER_ADDR=74.118.140.240:1002"
@@ -57,7 +57,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/ramdisk/ledger \
 	--accounts /mnt/ramdisk/accounts \
 	--snapshots /mnt/snap/snapshots \
-	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \
 	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-mainnet.json \

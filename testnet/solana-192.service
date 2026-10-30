@@ -2,7 +2,7 @@
 # 5D1fNXzvv5NjV1ysLjirC4WY92RNsVH18vjmcszZd8on - Anza
 # dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs  - MonkeDAO
 # Ft5fbkqNa76vnsjYNwjDZUXoTWpP7VYm3mtsaQckQADN - Certus One
-# FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS - Solfege
+# FT9QgTVo375TgDAQusTgpsfXqTosCJLfrBpoVdcbnhtS - 1dad|Solfege
 # 9QxCLckBiJc783jnMvXZubK4wH86Eqqvashtrwvcsgkv - Algo|Stake
 
 [Unit]
@@ -20,7 +20,7 @@ LimitNOFILE=1000000
 LimitMEMLOCK=2000000000
 LogRateLimitIntervalSec=0
 Environment=SOLANA_METRICS_CONFIG="host=https://metrics.solana.com:8086,db=tds,u=testnet_write,p=c4fa841aa918bf8274e3e2a44d77568d9861b3ea"
-Environment=TAG=v4.3.0-jito
+Environment=TAG=v4.4.0-jito
 # [Dallas]
 Environment="BLOCK_ENGINE_URL=https://dallas.testnet.block-engine.jito.wtf"
 Environment="SHRED_RECEIVER_ADDR=141.98.218.12:1002"
@@ -34,7 +34,6 @@ ExecStart=/home/ubuntu/solana-tools/solana.sh validator \
 	--ledger /mnt/data/ledger \
 	--accounts /mnt/acct/accounts \
 	--snapshots /mnt/snap/snapshots \
-	--incremental-snapshot-archive-path /mnt/snap/snapshots_inc \
 	--log /mnt/data/log/solana.log \
 	--identity /home/ubuntu/solana-tools/keys/validator-keypair.json \
 	--vote-account /home/ubuntu/solana-tools/keys/vote-account-testnet.json \
