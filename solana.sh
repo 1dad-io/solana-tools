@@ -2545,7 +2545,7 @@ EOF
 	ok ${msg_pkg_installed//PKG/doublezero}
 }
 
-dz_user_list(){ ${dz} user list | grep `${dz} address`; }
+dz_user_list(){ local address=`${dz} address`; ${dz} user list | grep "${address}"; }
 dz(){
 	is_dryrun || is_linux || error ${err_unsupported_os}
 	dz_enabled || error ${msg_pkg_disabled//PKG/doublezero}
