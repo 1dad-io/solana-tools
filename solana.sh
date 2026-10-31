@@ -3525,7 +3525,7 @@ rxvote(){
 	
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
-	&& { [ -n "${ok}" ] && log "${ok}"; } \
+	&& { if [ -n "${ok}" ]; then log "${ok}"; fi; } \
 	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; }
