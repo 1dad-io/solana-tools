@@ -3469,32 +3469,11 @@ rxvote(){
 		local tip=" ${tip_dryrun}"
 	fi
 	
-	# a normal handoff must use recent transferred vote history;
-	# prefer .part and promote it locally, but allow a fresh .bin on retry
-	if [ "${force}" != 1 ]; then
-		cmd_rm=':'
-		if [ -s "${f}.part" ]; then
-			cmd_rm="${cmd_sudo} mv -fv ${f}.part ${f}"
-			f=${f}.part
-		fi
-		[ -s "${f}" ] || error ${err_file_missing//FILE/${f}} ${tip_force}
-		local mtime=`${cmd_mtime} ${f}`
-		local mdiff=$(($(date +%s)-$mtime))
-		if (( $mdiff > $state_ttl_seconds )); then
-			local str=${msg_file_outdated//FILE/${f##*/}}
-			str=${str//TIME/$(elapsed $mdiff)}
-			error ${str//TTL/${state_ttl_seconds}} ${tip_force}
-		fi
-		is_dryrun || sudo chown "$USER:" ${f}
-		local str=${msg_file_modified//FILE/${f##*/}}
-		str=${str//TIME/$(elapsed $mdiff)}
-		local ok=${str//TTL/${state_ttl_seconds}}
-	fi
-	
-	# lift the vote history requirement only when explicitly forced
+	local str=
 	if [ "${force}" == 1 ]; then
-		# without vote history, replay must first make the primary's last vote
-		# safe before set-identity can reconstruct the voting state
+		# forced takeover: discard local vote history and reconstruct voting state
+		# require local replay to reach the sampled cluster tip and local finalization
+		# to pass the vote account's last vote before switching identity
 		local cluster_slot=$(json_rpc ${rpc_url} getSlot '[{"commitment":"processed"}]')
 		local slot=$(json_rpc localhost getSlot '[{"commitment":"processed"}]')
 		local finalized=$(json_rpc localhost getSlot '[{"commitment":"finalized"}]')
@@ -3506,16 +3485,37 @@ rxvote(){
 			return 2
 		fi
 		if (( ${slot} < ${cluster_slot} )); then
-			local str=${err_slot_behind//SLOT/${slot}}
+			str=${err_slot_behind//SLOT/${slot}}
 			warn "${str//TIP/${cluster_slot}}"
 			return 2
 		fi
 		if (( ${finalized} <= ${last_vote} )); then
-			local str=${err_slot_not_finalized//SLOT/${finalized}}
+			str=${err_slot_not_finalized//SLOT/${finalized}}
 			warn "${str//VOTE/${last_vote}}"
 			return 2
 		fi
 		fd_enabled || cmd_id+=' --do-not-require-vote-history'
+	else
+		# normal handoff: require recent vote history
+		# prefer .part and promote it before switching identity;
+		# otherwise accept a fresh .bin for retries
+		cmd_rm=':'
+		if [ -s "${f}.part" ]; then
+			cmd_rm="${cmd_sudo} mv -fv ${f}.part ${f}"
+			f=${f}.part
+		fi
+		[ -s "${f}" ] || error ${err_file_missing//FILE/${f}} ${tip_force}
+		local mtime=`${cmd_mtime} ${f}`
+		local mdiff=$(($(date +%s)-$mtime))
+		if (( $mdiff > $state_ttl_seconds )); then
+			str=${msg_file_outdated//FILE/${f##*/}}
+			str=${str//TIME/$(elapsed $mdiff)}
+			error ${str//TTL/${state_ttl_seconds}} ${tip_force}
+		fi
+		is_dryrun || sudo chown "$USER:" ${f}
+		str=${msg_file_modified//FILE/${f##*/}}
+		str=${str//TIME/$(elapsed $mdiff)}
+		str=${str//TTL/${state_ttl_seconds}}
 	fi
 	
 	# run the transition
@@ -3525,7 +3525,7 @@ rxvote(){
 	
 	local res status=0
 	log "${msg_log_start//CLIENT/${client}}${tip}" && SECONDS=0 \
-	&& { if [ -n "${ok}" ]; then log "${ok}"; fi; } \
+	&& { if [ -n "${str}" ]; then log "${str}"; fi; } \
 	&& { res=`${cmd_rm} 2>&1` || status=1; log "${res}"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_id} 2>&1` || status=1; log "$(fd_sanitize ${res})"; } && [ ${status} -eq 0 ] \
 	&& { res=`${cmd_ln} 2>&1` || status=1; log "${res}"; }
